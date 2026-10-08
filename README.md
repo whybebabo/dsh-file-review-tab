@@ -27,9 +27,9 @@ dsh plugin --profile web add dsh-file-review-tab
 dsh plugin --profile web add github:Lzh3070/dsh-file-review-tab
 ```
 
-前置依赖：DeepSeek Harness web（**0.1.5-rc.1+**，已在 0.1.5-rc.1 / 0.1.5-rc.2 上真机验证）+ [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)（≥ 0.19.1）。
+前置依赖：DeepSeek Harness web（**0.2.0-rc.2+**，已在 0.2.0-rc.2 上真机验证）+ [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)（≥ 0.19.1，已在 0.24.1 上验证）。
 
-> **版本对应**：`dsh-file-review-tab@0.5.x` 只支持 DSH 0.1.5 及更新的侧边栏 API；仍停留在 DSH 0.1.2 / 0.1.1 的用户请继续使用 `dsh-file-review-tab@0.4.1`。
+> **版本对应**：`dsh-file-review-tab@0.6.x` 面向 DSH 0.2.0（服务端严格的 `TypertCodec.create()` 工厂 + `conversation.chat.turnTail` 加法列表槽）；仍停留在 DSH 0.1.5 的用户请继续使用 `dsh-file-review-tab@0.5.x`，0.1.2 / 0.1.1 请用 `0.4.1`。
 
 安装后**重启 dsh web**，在 better-sidebar 侧边栏「+」菜单打开「文件审查」即可。
 
@@ -52,4 +52,15 @@ dsh plugin --profile web add github:Lzh3070/dsh-file-review-tab
 - Session-isolated, pause-when-hidden, CSS-Module scoped styling (no conflicts with the chat area or other plugins).
 - Narrow-pane adaptive: in half-width splits and floated free windows the turn header wraps and secondary content yields so undo and file names never clip.
 
-Requires DeepSeek Harness web (0.1.5-rc.1+, verified on 0.1.5-rc.1 / 0.1.5-rc.2) and dsh-better-sidebar (≥ 0.19.1). `dsh-file-review-tab@0.5.x` targets only the DSH 0.1.5 client API; users on DSH 0.1.2 / 0.1.1 should stay on 0.4.1. Restart `dsh web` after installing, then open the "File Review" tab from the sidebar's "+" menu.
+Requires DeepSeek Harness web (0.2.0-rc.2+, verified on 0.2.0-rc.2) and dsh-better-sidebar (≥ 0.19.1, verified on 0.24.1). `dsh-file-review-tab@0.6.x` targets the DSH 0.2.0 client API (strict `TypertCodec.create()`, additive `turnTail` list slot); users on DSH 0.1.5 should stay on 0.5.x, and 0.1.2 / 0.1.1 on 0.4.1. Restart `dsh web` after installing, then open the "File Review" tab from the sidebar's "+" menu.
+
+## Development
+
+```sh
+pnpm install
+pnpm typecheck   # tsc --noEmit
+pnpm build       # emits lib/ (host ESM + browser bundle + .d.ts)
+pnpm test        # runtime checks; run after build
+```
+
+`pnpm test` drives the built artifacts through the real DSH 0.2.0 registries rather than mocking them, so a breaking upstream API change fails here instead of in the UI: `test/typert-descriptors.mjs` registers the Host Typert contribution and round-trips every codec (plus a control proving the pre-0.2.0 `schema:` codec shape is rejected), `test/slot-registration.mjs` registers the turn-tail entry against the real `SlotCore` (a list slot requires an `id`), `test/host-apply.mjs` runs the host half's `apply()` on a real cordis `Context` and drives the `tools/post-execute` recorder, and `test/client-bundle.mjs` evaluates `lib/client.js` the way the Web plugin loader does.

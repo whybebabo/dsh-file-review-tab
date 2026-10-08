@@ -4,9 +4,10 @@
  *
  * 1. the chat turn-tail row (the original dsh-file-review card: "Edited N
  *    files · +M -K / Undo / Review"), registered into the
- *    'conversation.chat.turnTail' chain at priority -2 so it claims the chain
- *    BEFORE dsh-better-sidebar's own -1 interception row (chain election is
- *    first-claim-wins: exactly one row ever renders, never both); and
+ *    'conversation.chat.turnTail' list at order -2. This slot was a
+ *    first-claim-wins chain through DSH 0.1.5 and is an additive list from
+ *    0.1.6-alpha.2, so entries coexist instead of electing: the row declares an
+ *    `id` and renders null for a turn it does not claim (see ProducedFiles); and
  * 2. the 'file-review' better-sidebar tab (per-session change list + inline
  *    red/green diffs + per-turn/per-file undo).
  *
@@ -176,7 +177,7 @@ export function apply(ctx: Context): void {
   }, 'file-review-tab: typert remote')
 
   // The turn-local mutation accumulator both chat-side surfaces read: the
-  // turn-tail row's select() and the prose-mention vocabulary derive from the
+  // turn-tail row's claim test and the prose-mention vocabulary derive from the
   // 'deliverables' Turn data this Definition publishes. dsh 0.1.5 exposes the
   // Definition registry as `ctx.uiConversation.events` (the old
   // `conversationEvents` root is gone), and `cordis.patch.yml` composes the
@@ -186,17 +187,20 @@ export function apply(ctx: Context): void {
     'file-review-tab: deliverables definition',
   )
 
-  // The chat turn-tail row — the original dsh-file-review card, verbatim.
-  // priority -2 runs BEFORE dsh-better-sidebar's -1 interception row: chain
-  // election is first-claim-wins in ascending priority order, so this row
-  // renders and the sidebar's chip row declines (never a double row). When
-  // this plugin is composed out, the -1 row (or the host fallback) takes over
-  // again — the off state needs no cleanup here.
+  // The chat turn-tail row — the original dsh-file-review card, ported onto
+  // dsh 0.2.0's ADDITIVE list slot. `conversation.chat.turnTail` was a chain
+  // (first-claim-wins election, keyed by `select` + `priority`) through 0.1.5
+  // and became a `list` in 0.1.6-alpha.2, so `select`/`priority` are gone: the
+  // entry now declares `id` + `order`. `cordis.patch.yml` still disables the
+  // built-in ui-deliverables row, so this plugin remains the turnTail list's
+  // only occupant; the claim test nonetheless moves into the component (see
+  // ProducedFiles), because a list entry has no selector to decline with and
+  // must render null for a turn that produced no files.
   ctx.effect(
     () => ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
       name: 'conversation.chat.turnTail',
-      select: selectProducedFiles,
-      priority: -2,
+      id: 'dsh-file-review-tab',
+      order: -2,
       locale: CHAT_NS,
       registrant: 'dsh-file-review-tab',
       inject: (sessionId: string) => {
@@ -250,7 +254,7 @@ export function apply(ctx: Context): void {
     const tChat = ctx.locale.bind(CHAT_NS)
     const mentions: ChatFileMentions = {
       forClosing(owner, _sessionId) {
-        // Same claim test the turn-tail chain entry runs: no produced files,
+        // Same claim test the turn-tail list entry runs: no produced files,
         // no vocabulary — the two surfaces agree by construction.
         const reviews = selectProducedFiles(owner)
         if (reviews === null) return undefined

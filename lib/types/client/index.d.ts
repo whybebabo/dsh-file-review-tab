@@ -4,9 +4,10 @@
  *
  * 1. the chat turn-tail row (the original dsh-file-review card: "Edited N
  *    files · +M -K / Undo / Review"), registered into the
- *    'conversation.chat.turnTail' chain at priority -2 so it claims the chain
- *    BEFORE dsh-better-sidebar's own -1 interception row (chain election is
- *    first-claim-wins: exactly one row ever renders, never both); and
+ *    'conversation.chat.turnTail' list at order -2. This slot was a
+ *    first-claim-wins chain through DSH 0.1.5 and is an additive list from
+ *    0.1.6-alpha.2, so entries coexist instead of electing: the row declares an
+ *    `id` and renders null for a turn it does not claim (see ProducedFiles); and
  * 2. the 'file-review' better-sidebar tab (per-session change list + inline
  *    red/green diffs + per-turn/per-file undo).
  *

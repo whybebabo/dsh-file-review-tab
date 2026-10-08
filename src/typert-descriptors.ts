@@ -1,9 +1,28 @@
 /** Strict Typert codecs shared by the Host and browser contribution artifacts. */
 
 import { z } from 'zod'
-import type { InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
+import type { InvocationDescriptor, TypertCodec, TypertSchema } from '@deepseek-ai/dsh-typert-protocol'
 
 export const PACKAGE_NAME = 'dsh-file-review-tab'
+
+/**
+ * dsh 0.2.0 replaced the strict codec's eager `schema` member with a lazy
+ * `create()` factory, so the process-realm schema is materialized on first
+ * boundary use instead of at contribution-load time. DSH's own generated
+ * codecs memoize one schema instance per codec behind that factory; these
+ * helpers keep the same shape for hand-written descriptors.
+ * @param build - creates the Zod schema on first call.
+ * @returns a memoized schema factory suitable for `codec.create`.
+ */
+function lazySchema(build: () => z.ZodType): () => TypertSchema {
+  let value: TypertSchema | undefined
+  return () => (value ??= build())
+}
+
+/** One strict codec over a lazily materialized Zod schema. */
+function strictCodec(typeSymbol: string, build: () => z.ZodType): TypertCodec {
+  return { mode: 'strict', typeSymbol, create: lazySchema(build) }
+}
 
 const diffSchema = z.object({
   path: z.string(),
@@ -27,23 +46,14 @@ const resultSchema = z.object({
   })),
 })
 
-const agentCodec = {
-  mode: 'strict' as const,
-  typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
-  schema: z.intersection(z.string(), z.unknown()),
-}
+const agentCodec = strictCodec(
+  '@deepseek-ai/dsh-session/types#SessionId',
+  () => z.intersection(z.string(), z.unknown()),
+)
 
-const requestCodec = {
-  mode: 'strict' as const,
-  typeSymbol: `${PACKAGE_NAME}#FileReviewRequest`,
-  schema: requestSchema,
-}
+const requestCodec = strictCodec(`${PACKAGE_NAME}#FileReviewRequest`, () => requestSchema)
 
-const resultCodec = {
-  mode: 'strict' as const,
-  typeSymbol: `${PACKAGE_NAME}#FileReviewResult`,
-  schema: resultSchema,
-}
+const resultCodec = strictCodec(`${PACKAGE_NAME}#FileReviewResult`, () => resultSchema)
 
 const recordedMutationSchema = z.object({
   rootCallId: z.string(),
@@ -61,17 +71,9 @@ const recordedResultSchema = z.object({
   mutations: z.array(recordedMutationSchema),
 })
 
-const recordedRequestCodec = {
-  mode: 'strict' as const,
-  typeSymbol: `${PACKAGE_NAME}#RecordedRequest`,
-  schema: recordedRequestSchema,
-}
+const recordedRequestCodec = strictCodec(`${PACKAGE_NAME}#RecordedRequest`, () => recordedRequestSchema)
 
-const recordedResultCodec = {
-  mode: 'strict' as const,
-  typeSymbol: `${PACKAGE_NAME}#RecordedResult`,
-  schema: recordedResultSchema,
-}
+const recordedResultCodec = strictCodec(`${PACKAGE_NAME}#RecordedResult`, () => recordedResultSchema)
 
 function descriptor(method: 'status' | 'apply'): InvocationDescriptor {
   return {

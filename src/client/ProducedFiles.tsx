@@ -14,7 +14,7 @@ import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
   FileReviewAction, FileReviewRequest, FileReviewResult,
 } from '../change-types.ts'
-import { basename, type ProducedFileReview } from './turn-deliverables.ts'
+import { basename, selectProducedFiles, type ProducedFileReview } from './turn-deliverables.ts'
 import type { NS } from './chat-locales.ts'
 import { summarizeDiffs, type UnifiedDiffStats } from './UnifiedDiff.tsx'
 import css from './ProducedFiles.module.css'
@@ -36,9 +36,15 @@ interface ToggleNotice {
   readonly files: readonly NoticeFile[]
 }
 
-/** Matched file reviews plus the opener and locale supplied by the turn-tail slot. */
-export type ProducedFilesProps = Pick<TurnTailOwnerProps, 'openFile' | 'turn'> & {
-  matched: readonly ProducedFileReview[]
+/**
+ * Turn-tail owner currency plus the opener and locale supplied by the slot.
+ *
+ * dsh 0.2.0's `conversation.chat.turnTail` is a `list` slot, so there is no
+ * chain selector to receive a pre-matched value on: the component runs the
+ * claim test itself ({@link selectProducedFiles}) and renders nothing when the
+ * closing turn produced no files.
+ */
+export type ProducedFilesProps = TurnTailOwnerProps & {
   /** Session workspace root (reserved; the chat card shows tool paths verbatim). */
   projectRoot?: string | undefined
   inspectChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>
@@ -188,12 +194,29 @@ function Stats({ stats, label }: { readonly stats: UnifiedDiffStats; readonly la
   )
 }
 
-/** Render one turn's produced files as a summary card opening the sidebar tab. */
-export function ProducedFiles({
-  matched: reviews, openFile, turn: turnLocation,
+/**
+ * Turn-tail list entry: claim the turn, then render the card.
+ *
+ * The claim test lives here rather than in a chain selector because
+ * `conversation.chat.turnTail` is an additive `list` in dsh 0.2.0. Splitting
+ * the test from the card keeps the card's hook order unconditional: the
+ * wrapper holds no hooks, so early-returning null for an unsettled turn can
+ * never change how many hooks the card below it calls.
+ * @param props - turn-tail owner currency plus the plugin's injected face.
+ * @returns the produced-files card, or null when this turn produced no files.
+ */
+export function ProducedFiles(props: ProducedFilesProps) {
+  const reviews = selectProducedFiles(props)
+  if (reviews === null) return null
+  return <ProducedFilesCard {...props} reviews={reviews} />
+}
+
+/** The review card itself: one turn's produced files plus the undo/redo toggle. */
+function ProducedFilesCard({
+  reviews, openFile, turn: turnLocation,
   inspectChanges = unavailableChanges, applyChanges = unavailableChanges,
   openInSidebarTab, t,
-}: ProducedFilesProps) {
+}: ProducedFilesProps & { readonly reviews: readonly ProducedFileReview[] }) {
   // The owning turn number (TurnLocation.turn) rides every deep link so the
   // sidebar tab expands this turn's rows only.
   const turnNumber = turnLocation.turn
