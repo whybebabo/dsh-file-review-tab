@@ -55,8 +55,9 @@ const seedStub = {
     React.createElement('span', { 'data-menu': '', 'data-selected': selectedId },
       anchor,
       React.createElement('span', { 'data-menu-items': String((items ?? []).length) })),
-  Tooltip: ({ children, label }) =>
-    React.createElement('span', { 'data-tooltip': String(label) }, children),
+  // Surface delayMs so the 500ms tooltip delay is assertable.
+  Tooltip: ({ children, label, delayMs }) =>
+    React.createElement('span', { 'data-tooltip': String(label), 'data-delay': String(delayMs) }, children),
   IconChevronDownOutlineRegular: () => React.createElement('span', { 'data-icon': 'chevron-down' }),
   IconCompareSplitOutlineRegular: () => React.createElement('span', { 'data-icon': 'compare' }),
   IconWrapFillRegular: () => React.createElement('span', { 'data-icon': 'wrap' }),
@@ -153,7 +154,36 @@ check('apply() registers a better-sidebar tab descriptor', () => {
   if (typeof descriptor.component !== 'function') throw new Error('component is not a function')
 })
 
-/** Render the tab with a session that changed the given files. */
+/**
+ * Extract just the header element from the rendered markup.
+ *
+ * Class names here are the REAL ones from the built bundle, so they are hashed
+ * (`r1eXuW_header`) and change every build — the harness cannot slice on a
+ * literal like `css_body` without silently matching nothing and falling back to
+ * the whole document. That fallback is dangerous: the per-turn rows below the
+ * header also render `+1`/`-1`, so a whole-document assertion passes even when
+ * the header's own counts are gone. This walks the div nesting from the header's
+ * opening tag to its matching close, so the slice is the header and nothing else.
+ */
+const headerOf = (html) => {
+  const at = html.search(/<div class="[^"]*_header"/)
+  if (at === -1) return html
+  const tags = /<div\b[^>]*>|<\/div>/g
+  tags.lastIndex = at
+  let depth = 0
+  let match
+  while ((match = tags.exec(html)) !== null) {
+    if (match[0].startsWith('</')) {
+      depth -= 1
+      if (depth === 0) return html.slice(at, match.index + match[0].length)
+    } else {
+      depth += 1
+    }
+  }
+  return html.slice(at)
+}
+
+
 const render = (files, extra = {}) => {
   const component = descriptor.component
   // Build the snapshot shape deriveSessionChanges actually walks: a chat legacy
@@ -228,6 +258,46 @@ check('header is the native 38px comparison bar with the tool row', () => {
   if (!html.includes('aria-haspopup="menu"')) throw new Error('no file selector trigger')
   for (const tool of ['split', 'wrap']) {
     if (!html.includes(`data-review-tool="${tool}"`)) throw new Error(`missing tool: ${tool}`)
+  }
+})
+
+check('the selector is a PathLabel with the native chevron affordance', () => {
+  const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
+  // The path must be drawn by the shared PathLabel atom, not a plain string:
+  // that atom is what gives the label its path-aware styling app-wide.
+  if (!html.includes('data-path-label="src/one.ts"')) throw new Error('path is not a PathLabel')
+  if (!html.includes('data-icon="chevron-down"')) throw new Error('no chevron on the selector')
+  if (!html.includes('data-review-file="src/one.ts"')) throw new Error('selector is not keyed by file')
+})
+
+check('the header carries the selected file +N/-N counts', () => {
+  const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
+  if (!html.includes('data-menu-items="1"')) throw new Error('the selector got no menu items')
+  // Scope to the HEADER element: the same +N/-N strings also appear in the
+  // per-turn stats rows below, so a whole-document assertion would pass even
+  // with the header counts removed entirely.
+  const header = headerOf(html)
+  for (const count of ['+1', '-1']) {
+    if (!header.includes(`>${count}</span>`)) throw new Error(`header is missing count ${count}`)
+  }
+})
+
+check('every header tool is a 500ms tooltip', () => {
+  const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
+  const delays = [...html.matchAll(/data-delay="(\d+)"/g)].map(m => m[1])
+  // split + wrap + open-file + the plugin's toggle.
+  if (delays.length < 4) throw new Error(`only ${delays.length} tooltips rendered`)
+  for (const delay of delays) {
+    if (delay !== '500') throw new Error(`a tooltip uses ${delay}ms, native uses 500ms`)
+  }
+})
+
+check('the split and wrap tools are pressed-state toggles', () => {
+  const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
+  for (const tool of ['split', 'wrap']) {
+    const at = html.indexOf(`data-review-tool="${tool}"`)
+    const tag = html.slice(Math.max(0, html.lastIndexOf('<button', at)), at)
+    if (!tag.includes('aria-pressed')) throw new Error(`${tool} has no aria-pressed`)
   }
 })
 
