@@ -2,15 +2,15 @@
 //
 // The header bar is a copy of dsh's own review tab (ReviewTab.module.css): a
 // 38px row holding the file selector, the selected file's +/- counts, and the
-// tool row (split, wrap, open file). One addition sits at the end of that tool
-// row — undo/reapply — which is the only control native's own tab cannot host
-// here, because its comparison header belongs to the review tab itself rather
-// than to an extension point.
+// tool row (split, wrap, open file) — exactly native's controls, with nothing
+// appended. The selector covers the LATEST turn's changed files, so the header
+// answers "what did the turn just finished change?" the way the built-in tab
+// answers it for its own turn.
 //
 // Below the bar the tab keeps its own session-level body: every turn this
-// session changed, each with inline red/green diffs and a per-turn toggle. So
-// the chrome matches the built-in tab while the list still covers the whole
-// session and keeps the undo capability.
+// session changed, each with inline red/green diffs. Undo/reapply lives there,
+// on each turn group and each file row, so the capability is preserved without
+// putting a non-native control in the chrome.
 //
 // Diffs render through NativeDiff, a faithful port of dsh's FileDiff, so a diff
 // here looks like a diff anywhere else in the app. All derivation rides the
@@ -378,25 +378,36 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   const lastSeedNonceRef = useRef<number | undefined>(undefined)
   const pendingScrollRef = useRef<PendingScroll | null>(null)
 
-  // The header's file selector covers the whole session, so a path that recurs
-  // across turns is listed once — at its LATEST occurrence, the one a reviewer
-  // most likely means.
-  const sessionFiles = useMemo(() => {
-    const byPath = new Map<string, FlatChange>()
-    for (const item of flat) byPath.set(item.path, item)
-    return [...byPath.values()]
-  }, [flat])
+  // The header selector covers the LATEST turn's changed files only. Native's
+  // review tab is per-turn, and a session-wide list made the header answer a
+  // question the body answers better: every turn is listed below with its own
+  // diffs and toggles. `turns` is ascending, so its last entry is the newest
+  // change-bearing turn, and a path edited again in a later turn appears here at
+  // that latest revision.
+  const sessionFiles = useMemo<readonly FlatChange[]>(() => {
+    const latest = turns.length === 0 ? undefined : turns[turns.length - 1]
+    if (latest === undefined) return []
+    return latest.files.map(file => ({
+      turn: latest.turn,
+      path: file.path,
+      diffs: file.diffs,
+      ...(file.deleted === true ? { deleted: true as const } : {}),
+    }))
+  }, [turns])
+  // The list is replaced wholesale when a new turn lands, so a carried-over
+  // index would silently select an unrelated file (index 3 of the previous turn
+  // is not index 3 of this one). Restart at the newest turn's first file, which
+  // is what the built-in per-turn tab shows when it switches turns.
+  const latestTurnNumber = turns.length === 0 ? null : turns[turns.length - 1]!.turn
+  useEffect(() => {
+    setSelectedIndex(0)
+    setMenuOpen(false)
+  }, [latestTurnNumber])
   const selected = sessionFiles[Math.min(selectedIndex, Math.max(0, sessionFiles.length - 1))]
   const selectedStats = useMemo(
     () => (selected === undefined ? { added: 0, removed: 0 } : summarizeDiffs(selected.diffs)),
     [selected],
   )
-  const selectedState = selected === undefined
-    ? undefined
-    : states.get(stateKey(selected.turn, selected.path))
-  const selectedReversible = selected !== undefined
-    && selected.deleted !== true
-    && isReversible({ path: selected.path, diffs: selected.diffs })
 
   // Sidebar-tab deep link: the chat row's 审查 button (and per-file chips)
   // publish a session-scoped seed through this plugin's own channel, then
@@ -797,9 +808,6 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     )
   }
 
-  const undoAction: FileReviewAction = selectedState === 'undone' ? 'redo' : 'undo'
-  const undoBusy = selected !== undefined && busyKey === stateKey(selected.turn, selected.path)
-  const undoLabel = t(undoAction === 'undo' ? 'undo' : 'redo')
   // One stable label set for every comparison this tab draws.
   const diffLabels: NativeDiffLabels = {
     created: t('diffCreated'),
@@ -901,30 +909,6 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
               </button>
             </Tooltip>
           )}
-          <Tooltip
-            label={selectedReversible ? undoLabel : t('toggleUnavailable')}
-            side="bottom"
-            delayMs={500}
-          >
-            <button
-              type="button"
-              className={css.toolLabel}
-              aria-pressed={undoAction === 'redo'}
-              disabled={statusPending || busyKey !== null || !selectedReversible}
-              data-review-tool="toggle"
-              onClick={() => {
-                if (selected === undefined) return
-                runToggle(
-                  stateKey(selected.turn, selected.path),
-                  [{ turn: selected.turn, path: selected.path, diffs: selected.diffs }],
-                  undoAction,
-                )
-              }}
-            >
-              {undoAction === 'undo' ? <UndoIcon /> : <RedoIcon />}
-              {undoBusy ? t(undoAction === 'undo' ? 'undoing' : 'redoing') : undoLabel}
-            </button>
-          </Tooltip>
         </span>
       </div>
       {notice !== null && (

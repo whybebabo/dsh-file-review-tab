@@ -166,46 +166,6 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-/* The undo/reapply control carries a label beside its glyph, so it is the one
-   tool that is not a fixed square. Sized to the same 28px row as its peers. */
-.toolLabel {
-  display: inline-flex;
-  height: 28px;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--dsw-radius-sm);
-  background: 0 0;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  line-height: 20px;
-  white-space: nowrap;
-}
-
-.toolLabel svg {
-  width: 15px;
-  height: 15px;
-  flex: none;
-}
-
-.toolLabel:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.toolLabel:disabled {
-  cursor: progress;
-  opacity: .55;
-}
-
-.toolLabel[aria-pressed='true'] {
-  color: var(--dsw-alias-label-primary);
-}
-
 .notice {
   flex: none;
   margin: 8px 10px 0;

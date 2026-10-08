@@ -285,8 +285,9 @@ check('the header carries the selected file +N/-N counts', () => {
 check('every header tool is a 500ms tooltip', () => {
   const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
   const delays = [...html.matchAll(/data-delay="(\d+)"/g)].map(m => m[1])
-  // split + wrap + open-file + the plugin's toggle.
-  if (delays.length < 4) throw new Error(`only ${delays.length} tooltips rendered`)
+  // split + wrap + open-file. Native's own three tools, and nothing else: the
+  // header deliberately hosts no additional control.
+  if (delays.length !== 3) throw new Error(`expected 3 header tooltips, got ${delays.length}`)
   for (const delay of delays) {
     if (delay !== '500') throw new Error(`a tooltip uses ${delay}ms, native uses 500ms`)
   }
@@ -301,15 +302,62 @@ check('the split and wrap tools are pressed-state toggles', () => {
   }
 })
 
-check('undo/reapply joins the native tool row as its own control', () => {
+check('the header tool row hosts nothing beyond native\'s own controls', () => {
   const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
-  if (!html.includes('data-review-tool="toggle"')) {
-    throw new Error('the toggle is not in the tool row')
+  const header = headerOf(html)
+  const tools = [...header.matchAll(/data-review-tool="([\w-]+)"/g)].map(m => m[1])
+  // Exactly native's three, in native's order. An extra entry here is the
+  // regression this guards: the header is a copy of the built-in bar, so any
+  // control the built-in bar does not have is a deviation.
+  const expected = ['split', 'wrap', 'open-file']
+  if (tools.join(',') !== expected.join(',')) {
+    throw new Error(`header tools are [${tools.join(', ')}], expected [${expected.join(', ')}]`)
   }
-  // It must sit INSIDE the tools container, beside the native buttons.
-  const toolsAt = html.indexOf('data-review-tool="split"')
-  const toggleAt = html.indexOf('data-review-tool="toggle"')
-  if (toggleAt < toolsAt) throw new Error('toggle is not positioned after the native tools')
+})
+
+check('the header selector lists only the latest turn\'s files', () => {
+  // Two turns, one file each. Native's review tab is per-turn, so the header's
+  // selector must offer the newest turn's file and NOT the older turn's.
+  const html = render([
+    { path: 'src/first.ts', oldText: 'a\n', newText: 'b\n' },
+    { path: 'src/second.ts', oldText: 'c\n', newText: 'd\n' },
+  ])
+  const header = headerOf(html)
+  if (!header.includes('data-review-file="src/second.ts"')) {
+    throw new Error('the newest turn\'s file is not selected in the header')
+  }
+  if (header.includes('src/first.ts')) {
+    throw new Error('the header still offers an older turn\'s file')
+  }
+  if (!header.includes('data-menu-items="1"')) {
+    const items = /data-menu-items="(\d+)"/.exec(header)?.[1]
+    throw new Error(`the selector offers ${items} files; the latest turn has 1`)
+  }
+})
+
+check('older turns remain in the body even though the header is latest-turn only', () => {
+  // The header is a per-turn view; the body is still the whole-session list.
+  const html = render([
+    { path: 'src/first.ts', oldText: 'a\n', newText: 'b\n' },
+    { path: 'src/second.ts', oldText: 'c\n', newText: 'd\n' },
+  ])
+  for (const path of ['first.ts', 'second.ts']) {
+    if (!html.includes(path)) throw new Error(`${path} is missing from the body`)
+  }
+})
+
+check('undo/reapply is not in the header, and stays available in the body', () => {
+  // The capability must survive its removal from the chrome: each turn group and
+  // each file row keeps its own toggle.
+  const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
+  const header = headerOf(html)
+  if (header.includes('data-review-tool="toggle"')) {
+    throw new Error('the undo toggle is still in the header')
+  }
+  // The body's per-turn and per-file undo buttons remain.
+  const body = html.slice(header.length === 0 ? 0 : html.indexOf(header) + header.length)
+  const undos = [...body.matchAll(/>([^<]*)\u64a4\u9500[^<]*</g)]
+  if (undos.length < 2) throw new Error(`expected per-turn and per-file undo in the body, found ${undos.length}`)
 })
 
 check('never nests a button inside another button', () => {
