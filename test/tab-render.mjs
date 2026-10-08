@@ -62,6 +62,7 @@ const seedStub = {
   IconCompareSplitOutlineRegular: () => React.createElement('span', { 'data-icon': 'compare' }),
   IconWrapFillRegular: () => React.createElement('span', { 'data-icon': 'wrap' }),
   IconNowrapFillRegular: () => React.createElement('span', { 'data-icon': 'nowrap' }),
+  IconRefreshOutlineRegular: () => React.createElement('span', { 'data-icon': 'refresh' }),
   IconInspectOutlineRegular: () => React.createElement('span', { 'data-icon': 'inspect' }),
   languageForPath: () => undefined,
   useCodeHighlighter: () => () => undefined,
@@ -183,6 +184,25 @@ const headerOf = (html) => {
   return html.slice(at)
 }
 
+/**
+ * The whole `<button>` element carrying one `data-review-tool` marker.
+ *
+ * Slicing from the marker back to the nearest `<button` only yields the
+ * attributes that happen to precede it. Attribute order in the rendered markup
+ * follows JSX source order, so `data-review-tool` (written after `disabled` and
+ * `aria-label` in some branches, before them in others) silently decides which
+ * assertions can see what. This returns the complete element instead.
+ */
+const buttonOf = (html, tool) => {
+  const marker = `data-review-tool="${tool}"`
+  const at = html.indexOf(marker)
+  if (at === -1) return null
+  const open = html.lastIndexOf('<button', at)
+  if (open === -1) return null
+  const close = html.indexOf('</button>', at)
+  return html.slice(open, close === -1 ? undefined : close + '</button>'.length)
+}
+
 
 const render = (files, extra = {}) => {
   const component = descriptor.component
@@ -285,9 +305,10 @@ check('the header carries the selected file +N/-N counts', () => {
 check('every header tool is a 500ms tooltip', () => {
   const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
   const delays = [...html.matchAll(/data-delay="(\d+)"/g)].map(m => m[1])
-  // split + wrap, and nothing else: the header deliberately hosts no
-  // additional control.
-  if (delays.length !== 2) throw new Error(`expected 2 header tooltips, got ${delays.length}`)
+  // split + wrap + refresh. The view toggles are native's; refresh is the one
+  // control native's bar has no equivalent for, because native's comparison
+  // header belongs to the review tab itself rather than an extension point.
+  if (delays.length !== 3) throw new Error(`expected 3 header tooltips, got ${delays.length}`)
   for (const delay of delays) {
     if (delay !== '500') throw new Error(`a tooltip uses ${delay}ms, native uses 500ms`)
   }
@@ -296,22 +317,52 @@ check('every header tool is a 500ms tooltip', () => {
 check('the split and wrap tools are pressed-state toggles', () => {
   const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
   for (const tool of ['split', 'wrap']) {
-    const at = html.indexOf(`data-review-tool="${tool}"`)
-    const tag = html.slice(Math.max(0, html.lastIndexOf('<button', at)), at)
+    const tag = buttonOf(html, tool)
+    if (tag === null) throw new Error(`no ${tool} tool in the header`)
     if (!tag.includes('aria-pressed')) throw new Error(`${tool} has no aria-pressed`)
   }
 })
 
-check('the header tool row is exactly split and wrap', () => {
+check('the header tool row is split, wrap and refresh', () => {
   const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
   const header = headerOf(html)
   const tools = [...header.matchAll(/data-review-tool="([\w-]+)"/g)].map(m => m[1])
-  // Split and wrap, in that order, and nothing else. Any extra entry is the
-  // regression this guards: the header is a copy of the built-in bar's chrome,
-  // and this plugin's own capabilities live in the body instead.
-  const expected = ['split', 'wrap']
+  // Split and wrap (native's two view toggles) then refresh, which re-checks
+  // every row's Host-side undo state. Any other entry is the regression this
+  // guards: this plugin's per-file capabilities live in the body instead.
+  const expected = ['split', 'wrap', 'refresh']
   if (tools.join(',') !== expected.join(',')) {
     throw new Error(`header tools are [${tools.join(', ')}], expected [${expected.join(', ')}]`)
+  }
+})
+
+check('the refresh tool is a labelled, tooltipped header button', () => {
+  const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
+  const tag = buttonOf(html, 'refresh')
+  if (tag === null) throw new Error('no refresh tool in the header')
+  // An icon-only control must carry its own accessible name.
+  if (!tag.includes('aria-label=')) throw new Error('the refresh tool has no aria-label')
+  // And a tooltip, so the glyph is explained on hover like native's tools. The
+  // tooltip wraps the button, so look at its opening tag just before.
+  const at = html.indexOf('data-review-tool="refresh"')
+  const tip = html.slice(Math.max(0, html.lastIndexOf('data-tooltip=', at)), at)
+  if (!tip.includes('data-tooltip=')) throw new Error('the refresh tool has no tooltip')
+})
+
+check('the refresh tool is enabled only when there is state to re-check', () => {
+  // With nothing to inspect the control is inert; with changes it is pressable.
+  // (The in-flight half of the condition needs a pending Host round-trip, which
+  // server rendering cannot produce — no effect runs, so `statusPending` stays
+  // at its initial false.)
+  const empty = render([])
+  const emptyTag = buttonOf(empty, 'refresh')
+  if (emptyTag === null) throw new Error('the refresh tool vanished with an empty session')
+  if (!emptyTag.includes('disabled')) {
+    throw new Error('refresh is pressable with nothing to re-check')
+  }
+  const busyTag = buttonOf(render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }]), 'refresh')
+  if (busyTag.includes('disabled')) {
+    throw new Error('refresh is inert while there are changes to re-check')
   }
 })
 

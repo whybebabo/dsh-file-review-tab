@@ -49,6 +49,7 @@ export declare const zh: {
     readonly stats: "新增 {added} 行，删除 {removed} 行";
     readonly unavailable: "无法为此更改还原可审查的差异。";
     readonly refresh: "刷新状态";
+    readonly refreshAria: "重新检查每个文件的撤销状态";
     readonly selectFile: "选择要查看的文件";
     readonly split: "切换为左右对比";
     readonly unified: "切换为单栏对比";

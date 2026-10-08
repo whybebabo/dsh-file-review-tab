@@ -51,6 +51,7 @@ export const zh = {
   stats: '新增 {added} 行，删除 {removed} 行',
   unavailable: '无法为此更改还原可审查的差异。',
   refresh: '刷新状态',
+  refreshAria: '重新检查每个文件的撤销状态',
   // Native comparison copy, wording copied from dsh's own dictionary so the
   // sidebar reads identically to the built-in review tab.
   selectFile: '选择要查看的文件',
@@ -112,6 +113,7 @@ export const en: Record<CopyKey, string> = {
   stats: '{added} lines added, {removed} lines removed',
   unavailable: 'No reconstructable diff is available for this change.',
   refresh: 'Refresh status',
+  refreshAria: 'Re-check every file\u2019s undo state',
   selectFile: 'Choose the file to review',
   split: 'Switch to split view',
   unified: 'Switch to unified view',

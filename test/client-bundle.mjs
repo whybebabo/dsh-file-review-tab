@@ -156,6 +156,19 @@ check('the comparison carries the native FileDiff declarations verbatim', () => 
   if (missing.length > 0) throw new Error(`missing native declarations: ${missing.join(' | ')}`)
 })
 
+check('the refresh tool drives its pending state from the inspection', () => {
+  // The CSS above is inert unless the button actually emits the attribute. That
+  // cannot be observed by rendering: `statusPending` starts false and no effect
+  // runs under server rendering, so the attribute is always absent there. The
+  // compiled binding is the observable fact instead.
+  const at = source.indexOf('"data-review-tool": "refresh"')
+  if (at === -1) throw new Error('no refresh tool in the bundle')
+  const region = source.slice(Math.max(0, at - 500), at + 500)
+  if (!/"data-pending":\s*statusPending\s*\?/.test(region)) {
+    throw new Error('the refresh tool does not drive data-pending from statusPending')
+  }
+})
+
 check('the empty-cell fill variable is declared on the element the renderer emits', () => {
   // Native declares `--diff-empty-fill` on FileDiff.root, which its CALLERS
   // apply; FileDiff itself only renders `.body`. This renderer emits `.body`
@@ -164,6 +177,31 @@ check('the empty-cell fill variable is declared on the element the renderer emit
   const bodyDecl = source.match(/\.[\w$]+_body\{[^}]*--diff-empty-fill/)
   if (bodyDecl === null) {
     throw new Error('--diff-empty-fill is not declared on the rendered .body rule')
+  }
+})
+
+check('the refresh tool has a visible running state and honors reduced motion', () => {
+  // A refresh that looks identical while it runs reads as a dead button. Its
+  // pending state is only reachable with a live Host round-trip (no effect runs
+  // under server rendering), so the declaration itself is what gets asserted.
+  // lightningcss minifies AND hashes the keyframes name, so match the suffix.
+  const pending = source.match(/\.([\w$]+)_tool\[data-pending\][^{]*\{[^}]*animation:[^;}]*reviewToolSpin/)
+  if (pending === null) {
+    throw new Error('the pending refresh tool has no spin animation')
+  }
+  const animation = /animation:[^;}]*?([\w$]+_reviewToolSpin)/.exec(pending[0])
+  if (animation === null) throw new Error('the spin animation is not named')
+  if (!source.includes(`@keyframes ${animation[1]}{`)) {
+    throw new Error(`@keyframes ${animation[1]} is missing`)
+  }
+  // Accessibility: an animation must be suppressible, and the selector that
+  // suppresses it must be the same rule the animation was declared on.
+  const reduced = source.match(/prefers-reduced-motion[^{]*\{[^@]*?\.([\w$]+)_tool\[data-pending\][^{]*\{[^}]*animation:\s*none/)
+  if (reduced === null) {
+    throw new Error('the pending spin ignores prefers-reduced-motion')
+  }
+  if (reduced[1] !== pending[1]) {
+    throw new Error(`reduced-motion override targets ${reduced[1]}, animation is on ${pending[1]}`)
   }
 })
 

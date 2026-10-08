@@ -28,6 +28,7 @@ import {
   IconChevronDownOutlineRegular,
   IconCompareSplitOutlineRegular,
   IconNowrapFillRegular,
+  IconRefreshOutlineRegular,
   IconWrapFillRegular,
   Menu,
   PathLabel,
@@ -913,6 +914,24 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
               onClick={() => { setWrap(value => !value) }}
             >
               {wrap ? <IconNowrapFillRegular /> : <IconWrapFillRegular />}
+            </button>
+          </Tooltip>
+          {/* Re-check every row's Host-side state on demand. Automatic
+              invalidation covers the common paths (this tab's own toggles, the
+              chat card, window focus), but a file changed outside the app while
+              this tab stayed focused has no event to ride — this is the
+              explicit escape hatch, and it reports progress while it runs. */}
+          <Tooltip label={t('refresh')} side="bottom" delayMs={500}>
+            <button
+              type="button"
+              className={css.tool}
+              aria-label={t('refreshAria')}
+              data-review-tool="refresh"
+              data-pending={statusPending ? '' : undefined}
+              disabled={statusPending || flat.length === 0}
+              onClick={() => { setStatusVersion(value => value + 1) }}
+            >
+              <IconRefreshOutlineRegular />
             </button>
           </Tooltip>
         </span>

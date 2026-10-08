@@ -162,6 +162,23 @@
   cursor: progress;
 }
 
+/* The refresh tool reports its in-flight round-trip by turning while the
+   inspection is pending; it is the only tool that does work rather than
+   switching a view, so it needs a visible running state. */
+.tool[data-pending] svg {
+  animation: reviewToolSpin .9s linear infinite;
+}
+
+@keyframes reviewToolSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool[data-pending] svg {
+    animation: none;
+  }
+}
+
 .tool[data-error] {
   color: var(--dsw-alias-state-error-primary);
 }
