@@ -37,7 +37,15 @@ function cssModulesPlugin() {
         minify: true,
       })
       const classes: Record<string, string> = {}
-      for (const [local, value] of Object.entries(exports ?? {})) classes[local] = value.name
+      // lightningcss returns its CSS-module export table in a nondeterministic
+      // key order (it varies on every call, even with identical input), so
+      // emitting it as-is makes the bundle churn on every build. Sorting the
+      // keys keeps `lib/client.js` byte-stable across rebuilds, which matters
+      // because lib/ is committed and its artifact rev is derived from file
+      // metadata.
+      for (const local of Object.keys(exports ?? {}).sort()) {
+        classes[local] = (exports ?? {})[local]!.name
+      }
       const styleId = `${PACKAGE_NAME}/${basename(file)}`
       return [
         `const css = ${JSON.stringify(code.toString())};`,

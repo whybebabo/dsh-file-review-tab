@@ -111,5 +111,22 @@ check('declares ui-primitives in dsh.client.external', () => {
   }
 })
 
+check('emits CSS-module classes in sorted order', () => {
+  // lightningcss returns its export table in a nondeterministic key order, so
+  // the build sorts the keys before emitting. Without that, lib/client.js
+  // changes bytes on every build and its artifact rev (derived from file
+  // metadata) invalidates the served bundle for no semantic reason. Assert the
+  // invariant here so the sort cannot be dropped unnoticed.
+  const tables = [...source.matchAll(/= \{\n((?:\t+"[\w$]+": "[\w$]+",?\n)+)\t+\}/g)]
+  if (tables.length === 0) throw new Error('no CSS-module export tables found')
+  for (const [, body] of tables) {
+    const keys = [...body.matchAll(/"([\w$]+)":/g)].map(m => m[1])
+    const sorted = [...keys].sort()
+    if (keys.join(',') !== sorted.join(',')) {
+      throw new Error(`CSS-module keys not sorted: ${keys.join(',')}`)
+    }
+  }
+})
+
 console.log(failures === 0 ? '\nALL CLIENT BUNDLE CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
 process.exitCode = failures === 0 ? 0 : 1
