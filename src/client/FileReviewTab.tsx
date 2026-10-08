@@ -284,13 +284,22 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     [roots],
   )
   const [recorded, setRecorded] = useState<readonly RecordedMutation[]>(() => [])
+  const [recordedPending, setRecordedPending] = useState(false)
   useEffect(() => {
-    if (!visible || roots.length === 0) return
+    // Clear on the early return too: without this, leaving the tab while a fetch
+    // is in flight would strand `recordedPending` at true and the refresh tool
+    // would spin forever.
+    if (!visible || roots.length === 0) { setRecordedPending(false); return }
     let active = true
+    setRecordedPending(true)
     const timer = window.setTimeout(() => {
       const scope = sessions.scope(sessionId as SessionId)
       const remote = scope?.get('remote.fileReview') as FileReviewRemote | undefined
-      if (scope === undefined || remote === undefined) { active = false; return }
+      if (scope === undefined || remote === undefined) {
+        active = false
+        setRecordedPending(false)
+        return
+      }
       remote.recorded({ rootCallIds: roots.map(root => root.rootCallId) })
         .then((result) => {
           if (!result.ok || !active) return
@@ -299,6 +308,9 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
         .catch(() => {
           // Transient fetch failure: keep the previous record; the next
           // snapshot, focus or review action retries.
+        })
+        .finally(() => {
+          if (active) setRecordedPending(false)
         })
     }, 200)
     return () => {
@@ -379,6 +391,17 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     () => flat.map(item => `${item.turn}|${item.path}|${item.diffs.length}`).join(';'),
     [flat],
   )
+  // Manual refresh drives BOTH async sources, so its enable/spin state has to
+  // cover both: the `recorded` fetch (needs roots) and the `status` inspection
+  // (needs inspectable rows). `flat` alone is wrong in both directions —
+  //   * a Code Mode session whose nested changes live only on the Host recorder
+  //     has `roots.length > 0` and `flat.length === 0` until the fetch lands,
+  //     and that first fetch is the one that can fail, so gating on `flat` would
+  //     disable the tool exactly when it is the only way to retry;
+  //   * a deletion-only turn has `flat.length > 0` with nothing inspectable, so
+  //     gating on `flat` would offer a button whose click does no work at all.
+  const canRefresh = roots.length > 0 || inspectable.length > 0
+  const refreshing = recordedPending || statusPending
   const flatRef = useRef(flat)
   flatRef.current = flat
   const turnsRef = useRef(turns)
@@ -566,7 +589,14 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   // Host-side state inspection: which recorded changes are still applied,
   // already undone, or in conflict. Paused while the tab is not visible.
   useEffect(() => {
-    if (!visible || flat.length === 0) return
+    // Gate on INSPECTABLE, not on `flat`. A deletion-only turn has
+    // `flat.length > 0` with every entry filtered out here (deleted files have
+    // no Host-side state), so gating on `flat` sent a `status` request with an
+    // empty file list and then cleared every row's state from the empty reply.
+    // Clearing the flag on this path matters too: the cleanup below only
+    // suppresses the in-flight reply, so an early return that skipped this would
+    // strand `statusPending` at true and leave the refresh tool spinning.
+    if (!visible || inspectable.length === 0) { setStatusPending(false); return }
     let active = true
     setStatusPending(true)
     // Debounce trailing-edge: streaming turns keep bumping flatKey per hunk;
@@ -927,8 +957,8 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
               className={css.tool}
               aria-label={t('refreshAria')}
               data-review-tool="refresh"
-              data-pending={statusPending ? '' : undefined}
-              disabled={statusPending || flat.length === 0}
+              data-pending={refreshing ? '' : undefined}
+              disabled={refreshing || !canRefresh}
               onClick={() => { setStatusVersion(value => value + 1) }}
             >
               <IconRefreshOutlineRegular />

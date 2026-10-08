@@ -204,8 +204,35 @@ const buttonOf = (html, tool) => {
 }
 
 
-const render = (files, extra = {}) => {
+/** Mount the tab against an arbitrary conversation snapshot. */
+const renderNodes = (nodes, extra = {}) => {
   const component = descriptor.component
+  const snapshot = {
+    nodes,
+    turnEnds: new Map(nodes.map((_node, index) => [index + 1, index + 1])),
+    partial: null,
+    runningCalls: [],
+  }
+  const ctx = new Proxy({
+    sessions: { scope: () => undefined },
+    get: (name) => (name === 'uiConversation'
+      ? { binding: () => ({ snapshot: { getSnapshot: () => snapshot, subscribe: () => () => {} } }) }
+      : undefined),
+    betterSidebar: { openFile() {}, openTab() {} },
+  }, { get: (target, property) => target[property] })
+
+  return renderToStaticMarkup(React.createElement(component, {
+    ctx,
+    // better-sidebar hands the component a scope; the tab destructures
+    // sessionId/cwd out of it.
+    scope: { sessionId: 'session-1', cwd: '/repo' },
+    visible: true,
+    tab: {},
+    ...extra,
+  }))
+}
+
+const render = (files, extra = {}) => {
   // Build the snapshot shape deriveSessionChanges actually walks: a chat legacy
   // slice holding settled tool-result nodes whose call head is an `edit`, plus
   // the turnEnds map that attributes each node's seq to a turn.
@@ -235,30 +262,49 @@ const render = (files, extra = {}) => {
       }],
     },
   }))
-  const snapshot = {
-    nodes,
-    turnEnds: new Map(files.map((_entry, index) => [index + 1, index + 1])),
-    partial: null,
-    runningCalls: [],
-  }
-  const ctx = new Proxy({
-    sessions: { scope: () => undefined },
-    get: (name) => (name === 'uiConversation'
-      ? { binding: () => ({ snapshot: { getSnapshot: () => snapshot, subscribe: () => () => {} } }) }
-      : undefined),
-    betterSidebar: { openFile() {}, openTab() {} },
-  }, { get: (target, property) => target[property] })
-
-  return renderToStaticMarkup(React.createElement(component, {
-    ctx,
-    // better-sidebar hands the component a scope; the tab destructures
-    // sessionId/cwd out of it.
-    scope: { sessionId: 'session-1', cwd: '/repo' },
-    visible: true,
-    tab: {},
-    ...extra,
-  }))
+  return renderNodes(nodes, extra)
 }
+
+/**
+ * A turn whose only change is a terminal deletion: `flat` is non-empty (the row
+ * still renders with its own explanation) but nothing is inspectable.
+ */
+const deletionOnlyNodes = () => [{
+  kind: 'tool-result',
+  seq: 1,
+  isError: false,
+  subCalls: [],
+  callId: 'call-1',
+  call: { name: 'bash', argsRaw: JSON.stringify({ command: 'rm gone.txt' }) },
+  meta: {},
+}]
+
+/**
+ * A Code Mode `run_code` root whose nested facts did NOT survive into the
+ * snapshot: `deriveSessionRoots` keeps it (no nested diffs), and its subCalls
+ * yield no changes — so the derived `flat` is empty and the only source of
+ * changes is the Host recorder's `recorded` fetch.
+ */
+const rootsOnlyNodes = () => [{
+  kind: 'tool-result',
+  seq: 1,
+  isError: false,
+  callId: 'call-1',
+  call: { name: 'run_code', argsRaw: JSON.stringify({ code: 'write(...)' }) },
+  meta: {},
+  subCalls: [{
+    kind: 'tool-result',
+    seq: 2,
+    isError: false,
+    subCalls: [],
+    callId: 'call-2',
+    // An unknown nested tool: conservative vocabulary yields no change, which is
+    // exactly the "nested facts did not survive" shape.
+    call: { name: 'unknown_tool', argsRaw: JSON.stringify({}) },
+    meta: {},
+  }],
+}]
+
 
 // A session that changed nothing: the tab must still mount, with its header.
 check('renders without throwing when the session changed nothing', () => {
@@ -352,8 +398,8 @@ check('the refresh tool is a labelled, tooltipped header button', () => {
 check('the refresh tool is enabled only when there is state to re-check', () => {
   // With nothing to inspect the control is inert; with changes it is pressable.
   // (The in-flight half of the condition needs a pending Host round-trip, which
-  // server rendering cannot produce — no effect runs, so `statusPending` stays
-  // at its initial false.)
+  // server rendering cannot produce — no effect runs, so the pending flags stay
+  // at their initial false.)
   const empty = render([])
   const emptyTag = buttonOf(empty, 'refresh')
   if (emptyTag === null) throw new Error('the refresh tool vanished with an empty session')
@@ -363,6 +409,32 @@ check('the refresh tool is enabled only when there is state to re-check', () => 
   const busyTag = buttonOf(render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }]), 'refresh')
   if (busyTag.includes('disabled')) {
     throw new Error('refresh is inert while there are changes to re-check')
+  }
+})
+
+check('a roots-only session can still be refreshed', () => {
+  // A Code Mode session whose nested changes live only on the Host recorder has
+  // roots but an EMPTY derived `flat` until the `recorded` fetch lands. That
+  // first fetch is the one that can fail, so gating the tool on `flat` would
+  // disable it exactly when it is the only way to retry — the user could not
+  // recover while the window kept focus.
+  const html = renderNodes(rootsOnlyNodes())
+  const tag = buttonOf(html, 'refresh')
+  if (tag === null) throw new Error('the refresh tool vanished in a roots-only session')
+  if (tag.includes('disabled')) {
+    throw new Error('refresh is disabled in a roots-only session, so a failed fetch cannot be retried')
+  }
+})
+
+check('a deletion-only session offers no pointless refresh', () => {
+  // Every row is a deleted file: `flat` is non-empty (the rows render with their
+  // own explanation) but nothing is inspectable, so a refresh would issue a
+  // status request with an empty file list and change nothing.
+  const html = renderNodes(deletionOnlyNodes())
+  const tag = buttonOf(html, 'refresh')
+  if (tag === null) throw new Error('the refresh tool vanished in a deletion-only session')
+  if (!tag.includes('disabled')) {
+    throw new Error('refresh is pressable when nothing is inspectable')
   }
 })
 

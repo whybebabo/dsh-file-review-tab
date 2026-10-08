@@ -156,16 +156,81 @@ check('the comparison carries the native FileDiff declarations verbatim', () => 
   if (missing.length > 0) throw new Error(`missing native declarations: ${missing.join(' | ')}`)
 })
 
-check('the refresh tool drives its pending state from the inspection', () => {
+check('the refresh tool drives its pending state from both async sources', () => {
   // The CSS above is inert unless the button actually emits the attribute. That
-  // cannot be observed by rendering: `statusPending` starts false and no effect
+  // cannot be observed by rendering: the pending flags start false and no effect
   // runs under server rendering, so the attribute is always absent there. The
   // compiled binding is the observable fact instead.
   const at = source.indexOf('"data-review-tool": "refresh"')
   if (at === -1) throw new Error('no refresh tool in the bundle')
   const region = source.slice(Math.max(0, at - 500), at + 500)
-  if (!/"data-pending":\s*statusPending\s*\?/.test(region)) {
-    throw new Error('the refresh tool does not drive data-pending from statusPending')
+  if (!/"data-pending":\s*refreshing\s*\?/.test(region)) {
+    throw new Error('the refresh tool does not drive data-pending from `refreshing`')
+  }
+  // `refreshing` must OR both sources: a root-only session is fetching while a
+  // status-only one is inspecting, and either is a real in-flight refresh.
+  const derived = source.match(/const refreshing\s*=\s*([^;]+);/)
+  if (derived === null) throw new Error('no `refreshing` derivation in the bundle')
+  if (!/recordedPending/.test(derived[1]) || !/statusPending/.test(derived[1])) {
+    throw new Error(`\`refreshing\` ignores a pending source: ${derived[1].trim()}`)
+  }
+  // And it must gate BOTH the disabled attribute and the click handler's effect.
+  if (!/disabled:\s*refreshing\s*\|\|/.test(region)) {
+    throw new Error('the refresh tool is not disabled while refreshing')
+  }
+})
+
+check('a roots-only session keeps the refresh tool pressable', () => {
+  // The bug this guards: gating the tool on `flat` alone. A Code Mode session
+  // whose nested changes live only on the Host recorder has roots with an EMPTY
+  // derived `flat` until the fetch lands, so a `flat` gate disables the tool
+  // exactly when it is the only way to retry a failed fetch.
+  const derived = source.match(/const canRefresh\s*=\s*([^;]+);/)
+  if (derived === null) throw new Error('no `canRefresh` derivation in the bundle')
+  if (!/roots/.test(derived[1])) {
+    throw new Error(`\`canRefresh\` ignores roots, so a roots-only session cannot retry: ${derived[1].trim()}`)
+  }
+  // And it must not be gated on `flat`, which is the wrong signal in both
+  // directions (empty for roots-only, non-empty for deletion-only).
+  if (/\bflat\.length\b/.test(derived[1])) {
+    throw new Error(`\`canRefresh\` gates on flat, which is never the right signal: ${derived[1].trim()}`)
+  }
+})
+
+check('the status inspection gates on inspectable rows, not on flat', () => {
+  // Same class of bug inside the effect. A deletion-only turn has
+  // `flat.length > 0` with every entry filtered out of `inspectable`, so a
+  // `flat` gate sends a status request with an EMPTY file list and then clears
+  // every row's state from the empty reply. Effects do not run under server
+  // rendering, so the compiled guard is what gets asserted.
+  const at = source.indexOf('action: "undo"')
+  if (at === -1) throw new Error('no status request in the bundle')
+  const effect = source.slice(Math.max(0, at - 1200), at)
+  const guard = [...effect.matchAll(/if \(!visible \|\| ([^)]+)\)/g)].at(-1)
+  if (guard === undefined) throw new Error('no visibility guard found before the status request')
+  if (!/inspectable\.length/.test(guard[1])) {
+    throw new Error(`the status effect gates on ${guard[1].trim()}, not on inspectable.length`)
+  }
+  // The early return must ALSO clear the pending flag. The cleanup function only
+  // suppresses the in-flight reply, so an early return that skipped this would
+  // strand `statusPending` at true and leave the refresh tool spinning forever.
+  if (!/setStatusPending\(false\)/.test(effect.slice(effect.indexOf(guard[0])))) {
+    throw new Error('the early return does not clear statusPending, so it can be stranded')
+  }
+})
+
+check('the recorded fetch clears its pending flag on every exit path', () => {
+  // Symmetric to the above for the other async source, including the
+  // abandoned-fetch paths (tab hidden, service unavailable).
+  const at = source.indexOf('remote.recorded(')
+  if (at === -1) throw new Error('no recorded fetch in the bundle')
+  const effect = source.slice(Math.max(0, at - 1800), at + 900)
+  const clears = [...effect.matchAll(/setRecordedPending\(false\)/g)].length
+  if (clears < 3) {
+    throw new Error(`the recorded fetch clears its pending flag only ${clears}x; expected the early return, the unavailable-service path and the settled fetch`)
+  }
+  if (!/\.finally\(/.test(effect)) {
+    throw new Error('the recorded fetch has no finally(), so a rejection strands its pending flag')
   }
 })
 
