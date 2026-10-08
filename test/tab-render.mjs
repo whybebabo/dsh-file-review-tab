@@ -285,9 +285,9 @@ check('the header carries the selected file +N/-N counts', () => {
 check('every header tool is a 500ms tooltip', () => {
   const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
   const delays = [...html.matchAll(/data-delay="(\d+)"/g)].map(m => m[1])
-  // split + wrap + open-file. Native's own three tools, and nothing else: the
-  // header deliberately hosts no additional control.
-  if (delays.length !== 3) throw new Error(`expected 3 header tooltips, got ${delays.length}`)
+  // split + wrap, and nothing else: the header deliberately hosts no
+  // additional control.
+  if (delays.length !== 2) throw new Error(`expected 2 header tooltips, got ${delays.length}`)
   for (const delay of delays) {
     if (delay !== '500') throw new Error(`a tooltip uses ${delay}ms, native uses 500ms`)
   }
@@ -302,16 +302,32 @@ check('the split and wrap tools are pressed-state toggles', () => {
   }
 })
 
-check('the header tool row hosts nothing beyond native\'s own controls', () => {
+check('the header tool row is exactly split and wrap', () => {
   const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
   const header = headerOf(html)
   const tools = [...header.matchAll(/data-review-tool="([\w-]+)"/g)].map(m => m[1])
-  // Exactly native's three, in native's order. An extra entry here is the
-  // regression this guards: the header is a copy of the built-in bar, so any
-  // control the built-in bar does not have is a deviation.
-  const expected = ['split', 'wrap', 'open-file']
+  // Split and wrap, in that order, and nothing else. Any extra entry is the
+  // regression this guards: the header is a copy of the built-in bar's chrome,
+  // and this plugin's own capabilities live in the body instead.
+  const expected = ['split', 'wrap']
   if (tools.join(',') !== expected.join(',')) {
     throw new Error(`header tools are [${tools.join(', ')}], expected [${expected.join(', ')}]`)
+  }
+})
+
+check('the open-in-sidebar control is gone from the header but kept per file row', () => {
+  const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
+  const header = headerOf(html)
+  if (header.includes('data-review-tool="open-file"')) {
+    throw new Error('the open-file tool is still in the header')
+  }
+  // Its capability must survive: every file row keeps its editor button. Slice
+  // the body as everything after the header element (class names are hashed per
+  // build, so the boundary has to come from headerOf, not a literal).
+  const body = html.slice(html.indexOf(header) + header.length)
+  const LABEL = '\u5728\u7f16\u8f91\u5668\u4e2d\u6253\u5f00'
+  if (!body.includes(LABEL)) {
+    throw new Error('the per-file open-in-editor control is missing from the body')
   }
 })
 

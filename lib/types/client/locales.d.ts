@@ -56,8 +56,6 @@ export declare const zh: {
     readonly wrap: "开启自动换行";
     readonly nowrap: "关闭自动换行";
     readonly wrapAria: "自动换行";
-    readonly openFile: "在侧边栏打开整个文件";
-    readonly openFileAria: "在侧边栏打开 {name}";
     readonly diffLoading: "正在读取改动…";
     readonly diffMissing: "这轮改动的内容已不可用";
     readonly diffCreated: "本轮新建的文件";

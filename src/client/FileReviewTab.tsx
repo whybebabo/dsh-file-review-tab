@@ -2,15 +2,14 @@
 //
 // The header bar is a copy of dsh's own review tab (ReviewTab.module.css): a
 // 38px row holding the file selector, the selected file's +/- counts, and the
-// tool row (split, wrap, open file) — exactly native's controls, with nothing
-// appended. The selector covers the LATEST turn's changed files, so the header
-// answers "what did the turn just finished change?" the way the built-in tab
-// answers it for its own turn.
+// split and wrap controls. The selector covers the LATEST turn's changed files,
+// so the header answers "what did the turn just finished change?" the way the
+// built-in tab answers it for its own turn.
 //
 // Below the bar the tab keeps its own session-level body: every turn this
-// session changed, each with inline red/green diffs. Undo/reapply lives there,
-// on each turn group and each file row, so the capability is preserved without
-// putting a non-native control in the chrome.
+// session changed, each with inline red/green diffs. Undo/reapply and
+// open-in-editor live there, per turn group and per file row, so those
+// capabilities are preserved without putting non-native controls in the chrome.
 //
 // Diffs render through NativeDiff, a faithful port of dsh's FileDiff, so a diff
 // here looks like a diff anywhere else in the app. All derivation rides the
@@ -28,7 +27,6 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   IconChevronDownOutlineRegular,
   IconCompareSplitOutlineRegular,
-  IconInspectOutlineRegular,
   IconNowrapFillRegular,
   IconWrapFillRegular,
   Menu,
@@ -896,19 +894,6 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
               {wrap ? <IconNowrapFillRegular /> : <IconWrapFillRegular />}
             </button>
           </Tooltip>
-          {selected !== undefined && selected.deleted !== true && (
-            <Tooltip label={t('openFile')} side="bottom" delayMs={500}>
-              <button
-                type="button"
-                className={css.tool}
-                aria-label={t('openFileAria', { name: selected.path })}
-                data-review-tool="open-file"
-                onClick={() => { openInEditor(selected.path) }}
-              >
-                <IconInspectOutlineRegular />
-              </button>
-            </Tooltip>
-          )}
         </span>
       </div>
       {notice !== null && (
