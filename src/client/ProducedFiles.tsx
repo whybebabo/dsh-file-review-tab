@@ -32,7 +32,8 @@ import type {
 } from '../change-types.ts'
 import { basename, selectProducedFiles, type ProducedFileReview } from './turn-deliverables.ts'
 import type { NS } from './chat-locales.ts'
-import { UnifiedDiff, summarizeDiffs, type UnifiedDiffStats } from './UnifiedDiff.tsx'
+import { summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
+import { NativeDiff } from './NativeDiff.tsx'
 import css from './ProducedCard.module.css'
 import toastCss from './ProducedFiles.module.css'
 
@@ -197,12 +198,12 @@ function ResultToast({
   )
 }
 
-function addStats(left: UnifiedDiffStats, right: UnifiedDiffStats): UnifiedDiffStats {
+function addStats(left: DiffStats, right: DiffStats): DiffStats {
   return { added: left.added + right.added, removed: left.removed + right.removed }
 }
 
 /** Added and deleted counts in the card's colors; native renders the same pair. */
-function Counts({ stats, label }: { readonly stats: UnifiedDiffStats; readonly label: string }) {
+function Counts({ stats, label }: { readonly stats: DiffStats; readonly label: string }) {
   return (
     <span className={css.statCounts} aria-label={label}>
       <span className={css.added}>+{GROUPED.format(stats.added)}</span>
@@ -211,7 +212,7 @@ function Counts({ stats, label }: { readonly stats: UnifiedDiffStats; readonly l
   )
 }
 
-/** The hover preview: path label plus the same unified diff the sidebar shows. */
+/** The hover preview: path label plus the same comparison the sidebar shows. */
 function ChangedFilePreview({
   display, reviews, t,
 }: {
@@ -225,16 +226,18 @@ function ChangedFilePreview({
         <span className={css.previewPath} data-changes-preview-path="">{display}</span>
       </div>
       <div className={css.previewBody}>
-        <UnifiedDiff
-          diffs={reviews.flatMap(review => review.diffs)}
-          contextLines={2}
-          showCopyButton={false}
-          showFileHeaders={false}
+        <NativeDiff
+          hunks={toNativeHunks(reviews.flatMap(review => review.diffs), 2)}
+          path={display}
+          split={false}
+          wrap={false}
           labels={{
-            copy: t('review.copy'),
-            copied: t('review.copied'),
-            showUnchanged: count => t('review.showUnchanged', { count: String(count) }),
-            hideUnchanged: count => t('review.hideUnchanged', { count: String(count) }),
+            created: t('diff.created'),
+            deleted: t('diff.deleted'),
+            unchanged: t('diff.unchanged'),
+            truncated: count => t('diff.truncated', { count }),
+            loading: t('diff.loading'),
+            missing: t('diff.missing'),
           }}
         />
       </div>
@@ -284,7 +287,7 @@ function ProducedFilesCard({
     stats: summarizeDiffs(review.diffs),
   })), [reviews])
   const totalStats = useMemo(
-    () => reviewsWithStats.reduce<UnifiedDiffStats>(
+    () => reviewsWithStats.reduce<DiffStats>(
       (total, item) => addStats(total, item.stats),
       { added: 0, removed: 0 },
     ),

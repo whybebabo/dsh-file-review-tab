@@ -54,6 +54,12 @@ export const en = {
   'review.hideUnchanged': 'Hide {count} unchanged lines',
   'review.stats': '{added} lines added, {removed} lines removed',
   'review.unavailable': 'No reconstructable diff is available for this change. You can still open the current file.',
+  'diff.created': 'Created in this turn',
+  'diff.deleted': 'Deleted in this turn',
+  'diff.unchanged': 'Both sides hold the same lines',
+  'diff.truncated': 'Showing the first {count} lines',
+  'diff.loading': 'Reading changes…',
+  'diff.missing': 'The contents of this change are no longer available',
 }
 
 /** Union of this namespace's dictionary keys. */
@@ -110,4 +116,10 @@ export const zh: Record<DeliverablesKey, string> = {
   'review.hideUnchanged': '隐藏 {count} 行未更改内容',
   'review.stats': '新增 {added} 行，删除 {removed} 行',
   'review.unavailable': '无法为此更改还原可审查的差异。你仍可打开当前文件。',
+  'diff.created': '本轮新建的文件',
+  'diff.deleted': '本轮删除的文件',
+  'diff.unchanged': '两侧内容相同',
+  'diff.truncated': '只显示前 {count} 行',
+  'diff.loading': '正在读取改动…',
+  'diff.missing': '此改动的内容已不可用',
 }

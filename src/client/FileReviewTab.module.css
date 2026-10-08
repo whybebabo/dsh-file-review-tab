@@ -1,6 +1,8 @@
-/* File-review sidebar tab styles. CSS-module scoped (no global selectors, no
-   chat-flow rules) and painted with the host's --dsw-alias-* design tokens so
-   the tab follows the app theme instead of imposing its own. */
+/* File-review sidebar tab styles.
+   The header, file selector and tool row copy dsh's own ReviewTab.module.css
+   (extracted from the running app's app.asar) value for value, so this tab's
+   chrome matches the built-in review tab. Only the session-level body — the
+   per-turn groups below the header — is this plugin's own addition. */
 
 .root {
   display: flex;
@@ -8,48 +10,200 @@
   height: 100%;
   min-height: 0;
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xs-13);
-  /* Narrow-pane adaptation (issue #3): the workbench splits panes
-     horizontally and floats tabs as free windows, and at half width the
-     all-nowrap header rows overflow. Track own width so @container rules
-     below can let secondary content yield instead of clipping actions. */
+  /* Narrow-pane adaptation: the workbench splits panes horizontally and floats
+     tabs as free windows, and at half width the nowrap header rows overflow.
+     Track own width so @container rules can let secondary content yield. */
   container-type: inline-size;
 }
 
+/* Native's 38px comparison header: selector, counts, then the tool row. */
 .header {
+  box-sizing: border-box;
   display: flex;
+  height: 38px;
+  flex: none;
   align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  gap: 6px;
+  padding: 0 6px 0 8px;
+  border-bottom: .5px solid var(--dsw-alias-border-l3);
+}
+
+.selectorLabel {
+  flex: auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selector {
+  flex: 0 auto;
+  min-width: 0;
+}
+
+.selectorButton {
+  box-sizing: border-box;
+  display: inline-flex;
+  max-width: 100%;
+  height: 28px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: 0 0;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.selectorButton:hover,
+.selectorButton[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.selectorButton svg {
+  display: block;
   flex: none;
 }
 
-.headerTitle {
-  font-weight: 600;
+.item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.refreshButton {
+.itemPath {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemCounts {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.counts {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.added {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.deleted {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.label {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tools {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
   margin-left: auto;
-  padding: 2px 6px;
+}
+
+.tool {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
   border: 0;
-  border-radius: 6px;
-  background: transparent;
+  border-radius: var(--dsw-radius-sm);
+  background: 0 0;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
 }
 
-.refreshButton:hover:not(:disabled) {
-  background: var(--dsw-alias-border-l1);
+.tool svg {
+  width: 15px;
+  height: 15px;
+}
+
+.tool:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.refreshButton:disabled {
-  opacity: 0.5;
-  cursor: default;
+.tool[aria-pressed='true'] .compareIcon {
+  transform: rotate(90deg);
+}
+
+.tool:disabled {
+  cursor: progress;
+}
+
+.tool[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* The undo/reapply control carries a label beside its glyph, so it is the one
+   tool that is not a fixed square. Sized to the same 28px row as its peers. */
+.toolLabel {
+  display: inline-flex;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: 0 0;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.toolLabel svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.toolLabel:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolLabel:disabled {
+  cursor: progress;
+  opacity: .55;
+}
+
+.toolLabel[aria-pressed='true'] {
+  color: var(--dsw-alias-label-primary);
 }
 
 .notice {
@@ -98,7 +252,7 @@
   align-items: center;
   gap: 8px;
   /* Narrow panes wrap the undo action to its own row instead of clipping it
-     out of the pane (issue #3); row-gap keeps the wrapped line tight. */
+     out of the pane; row-gap keeps the wrapped line tight. */
   flex-wrap: wrap;
   row-gap: 4px;
   min-height: 34px;
@@ -128,50 +282,48 @@
 .stats {
   display: inline-flex;
   gap: 6px;
-  white-space: nowrap;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-}
-
-.added {
-  color: var(--dsw-alias-state-success-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
 }
 
 .removed {
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* Per-turn and per-file toggles reuse the native tool sizing. */
 .actionButton {
   display: inline-flex;
+  height: 24px;
+  flex: none;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
-  padding: 3px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: transparent;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: 0 0;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
+  font: inherit;
   font-size: 12px;
   white-space: nowrap;
 }
 
 .actionButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-border-l1);
 }
 
 .actionButton:disabled {
-  opacity: 0.5;
-  cursor: default;
+  cursor: progress;
+  opacity: .55;
 }
 
 .buttonIcon {
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.6;
+  stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -182,22 +334,26 @@
   list-style: none;
 }
 
-.fileItem + .fileItem {
+.fileItem {
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
 .fileRow {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 8px 0 6px;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 8px 0 10px;
   cursor: pointer;
-  user-select: none;
 }
 
 .fileRow:hover {
-  background: color-mix(in srgb, var(--dsw-alias-border-l1) 55%, transparent);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.fileRow:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline: none;
 }
 
 .chevron {
@@ -206,10 +362,10 @@
   flex: none;
   fill: none;
   stroke: var(--dsw-alias-label-tertiary);
-  stroke-width: 1.8;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: transform 0.12s ease;
+  transition: transform .12s;
 }
 
 .chevronOpen {
@@ -221,11 +377,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
 }
 
 .stateBadge {
+  flex: none;
   padding: 1px 6px;
   border-radius: 999px;
   font-size: 11px;
@@ -233,49 +388,67 @@
 }
 
 .badgeUndone {
-  color: var(--dsw-alias-state-warning-primary, #d9a13b);
-  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #d9a13b) 14%, transparent);
+  color: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .badgeMuted {
   color: var(--dsw-alias-label-tertiary);
-  background: var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .badgeError {
   color: var(--dsw-alias-state-error-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
+}
+
+.deletedBadge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
+  white-space: nowrap;
 }
 
 .smallButton {
-  padding: 2px 7px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: transparent;
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: 0 0;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  font-size: 11px;
+  font: inherit;
+  font-size: 12px;
   white-space: nowrap;
-  flex: none;
 }
 
 .smallButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-border-l1);
 }
 
 .smallButton:disabled {
-  opacity: 0.5;
-  cursor: default;
+  cursor: progress;
+  opacity: .55;
 }
 
-.fileRow .smallButton:first-of-type {
+.editorButton {
   margin-left: auto;
 }
 
 .diffWrap {
   border-top: 1px solid var(--dsw-alias-border-l2);
-  overflow-x: auto;
+  /* The comparison clips its own long lines, so the wrapper must not also
+     scroll horizontally or the two fight. */
+  overflow: hidden;
+}
+
+.reviewDiff {
+  padding-bottom: 8px;
 }
 
 .diffUnavailable {
@@ -285,54 +458,23 @@
   font-size: 12px;
 }
 
-.reviewDiff {
-  border: 0;
-  border-radius: 0;
-  margin: 0;
-}
-
-.deletedBadge {
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 11px;
-  color: var(--dsw-alias-state-error-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
-  white-space: nowrap;
-}
-
-/* Narrow panes (a horizontal split's half width, or a floated free window):
-   the turn header's inline +N/-N summary and the open-in-editor action are
-   the first to yield, so the undo action and the file names never clip
-   (issue #3). */
-@container (max-width: 430px) {
-  .turnHeader .stats {
-    display: none;
-  }
-
-  .editorButton {
-    display: none;
-  }
-}
-
-/* Auto-archive tail (issue #5): older completed turns collapse into this
-   bottom section; collapsed renders nothing but the header. */
 .archiveSection {
-  margin: 4px 8px 6px;
-  border: 1px dashed var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  margin: 0 8px 10px;
 }
 
 .archiveHeader {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: inline-flex;
   width: 100%;
-  min-height: 34px;
-  padding: 0 8px 0 10px;
-  cursor: pointer;
-  color: var(--dsw-alias-label-secondary);
-  background: transparent;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 2px;
   border: 0;
+  background: 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
 }
 
 .archiveHeader:hover {
@@ -340,10 +482,31 @@
 }
 
 .archiveTitle {
+  min-width: 0;
+}
+
+.archiveLoadMore {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: 0 0;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: inherit;
   font-size: 12px;
 }
 
-.archiveSection .turnGroup {
-  /* Nested groups drop the card chrome inside the archive box. */
-  margin: 0 8px 8px;
+.archiveLoadMore:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Narrow panes: the counts and the tool labels yield before the tools clip. */
+@container (max-width: 260px) {
+  .counts {
+    display: none;
+  }
 }

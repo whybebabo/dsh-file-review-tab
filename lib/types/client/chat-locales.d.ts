@@ -52,6 +52,12 @@ export declare const en: {
     'review.hideUnchanged': string;
     'review.stats': string;
     'review.unavailable': string;
+    'diff.created': string;
+    'diff.deleted': string;
+    'diff.unchanged': string;
+    'diff.truncated': string;
+    'diff.loading': string;
+    'diff.missing': string;
 };
 /** Union of this namespace's dictionary keys. */
 export type DeliverablesKey = keyof typeof en;

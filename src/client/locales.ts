@@ -51,6 +51,23 @@ export const zh = {
   stats: '新增 {added} 行，删除 {removed} 行',
   unavailable: '无法为此更改还原可审查的差异。',
   refresh: '刷新状态',
+  // Native comparison copy, wording copied from dsh's own dictionary so the
+  // sidebar reads identically to the built-in review tab.
+  selectFile: '选择要查看的文件',
+  split: '切换为左右对比',
+  unified: '切换为单栏对比',
+  splitAria: '左右对比',
+  wrap: '开启自动换行',
+  nowrap: '关闭自动换行',
+  wrapAria: '自动换行',
+  openFile: '在侧边栏打开整个文件',
+  openFileAria: '在侧边栏打开 {name}',
+  diffLoading: '正在读取改动…',
+  diffMissing: '这轮改动的内容已不可用',
+  diffCreated: '本轮新建的文件',
+  diffDeleted: '本轮删除的文件',
+  diffUnchanged: '两侧内容相同',
+  diffTruncated: '只显示前 {count} 行',
 } as const
 
 /** Union of this namespace's dictionary keys. */
@@ -97,6 +114,21 @@ export const en: Record<CopyKey, string> = {
   stats: '{added} lines added, {removed} lines removed',
   unavailable: 'No reconstructable diff is available for this change.',
   refresh: 'Refresh status',
+  selectFile: 'Choose the file to review',
+  split: 'Switch to split view',
+  unified: 'Switch to unified view',
+  splitAria: 'Split view',
+  wrap: 'Enable line wrap',
+  nowrap: 'Disable line wrap',
+  wrapAria: 'Line wrap',
+  openFile: 'Open the whole file in the sidebar',
+  openFileAria: 'Open {name} in sidebar',
+  diffLoading: 'Reading changes…',
+  diffMissing: 'The contents of this turn\u2019s changes are no longer available',
+  diffCreated: 'Created in this turn',
+  diffDeleted: 'Deleted in this turn',
+  diffUnchanged: 'Both sides hold the same lines',
+  diffTruncated: 'Showing the first {count} lines',
 }
 
 /** The DSH locale service attached by the client apply (absent → browser detection). */

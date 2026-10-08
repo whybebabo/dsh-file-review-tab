@@ -1,9 +1,20 @@
-// FileReviewTab: the better-sidebar tab body. It lists every file the agent
-// changed in THIS session (grouped by turn), renders line-level red/green
-// diffs inline, and offers per-turn / per-file undo+reapply through the
-// package's Host file-review Typert remote. All derivation rides the client
-// runtime's finalized conversation snapshot — nothing is injected into the
-// chat flow (that was the style-conflict source this port removes).
+// FileReviewTab: the better-sidebar tab body.
+//
+// The header bar is a copy of dsh's own review tab (ReviewTab.module.css): a
+// 38px row holding the file selector, the selected file's +/- counts, and the
+// tool row (split, wrap, open file). One addition sits at the end of that tool
+// row — undo/reapply — which is the only control native's own tab cannot host
+// here, because its comparison header belongs to the review tab itself rather
+// than to an extension point.
+//
+// Below the bar the tab keeps its own session-level body: every turn this
+// session changed, each with inline red/green diffs and a per-turn toggle. So
+// the chrome matches the built-in tab while the list still covers the whole
+// session and keeps the undo capability.
+//
+// Diffs render through NativeDiff, a faithful port of dsh's FileDiff, so a diff
+// here looks like a diff anywhere else in the app. All derivation rides the
+// client runtime's finalized conversation snapshot.
 
 import {
   useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore,
@@ -14,6 +25,16 @@ import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import {
+  IconChevronDownOutlineRegular,
+  IconCompareSplitOutlineRegular,
+  IconInspectOutlineRegular,
+  IconNowrapFillRegular,
+  IconWrapFillRegular,
+  Menu,
+  PathLabel,
+  Tooltip,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   FileReviewAction, FileReviewFileState, FileReviewRequest, FileReviewResult,
   RecordedMutation, RecordedRequest, RecordedResult,
@@ -23,13 +44,16 @@ import {
   mergeRecordedTurns, resolveSessionPath, splitArchivedTurns,
   type SessionFileChange, type TurnFileChanges,
 } from './session-changes.ts'
-import { summarizeDiffs, UnifiedDiff, type UnifiedDiffStats } from './UnifiedDiff.tsx'
+import { summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
+import { NativeDiff, type NativeDiffLabels } from './NativeDiff.tsx'
 import { t } from './locales.ts'
 import { currentFileReviewSeed, subscribeFileReviewSeed, type FileReviewSeed } from './deep-link.ts'
 import css from './FileReviewTab.module.css'
 
 const SUCCESS_NOTICE_DURATION = 3000
 const ERROR_NOTICE_DURATION = 8000
+/** Grouped counts, matching the built-in card's own number formatting. */
+const GROUPED = new Intl.NumberFormat('en-US')
 
 /** Tab component props (a narrowing of better-sidebar's TabComponentProps). */
 export interface FileReviewTabProps {
@@ -101,11 +125,21 @@ function isReversible(file: SessionFileChange): boolean {
     && (diff.newText !== '' || diff.newStart !== undefined))
 }
 
-function addStats(left: UnifiedDiffStats, right: UnifiedDiffStats): UnifiedDiffStats {
+function addStats(left: DiffStats, right: DiffStats): DiffStats {
   return { added: left.added + right.added, removed: left.removed + right.removed }
 }
 
-function Stats({ stats }: { readonly stats: UnifiedDiffStats }) {
+/** The +/- pair, in the built-in card's own wording and colors. */
+function Counts({ stats }: { readonly stats: DiffStats }) {
+  return (
+    <>
+      <span className={css.added}>+{GROUPED.format(stats.added)}</span>
+      <span className={css.deleted}>-{GROUPED.format(stats.removed)}</span>
+    </>
+  )
+}
+
+function Stats({ stats }: { readonly stats: DiffStats }) {
   return (
     <span className={css.stats} aria-label={t('stats', {
       added: String(stats.added), removed: String(stats.removed),
@@ -191,7 +225,10 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [notice, setNotice] = useState<Notice | null>(null)
-  const [tick, setTick] = useState(0)
+  const [split, setSplit] = useState(false)
+  const [wrap, setWrap] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState(0)
   const noticeSeqRef = useRef(0)
   const noticeTimerRef = useRef<number | null>(null)
 
@@ -252,16 +289,16 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
       window.clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, rootsKey, tick, sessions, sessionId])
+  }, [visible, rootsKey, sessions, sessionId])
 
   const turns = useMemo(
     () => mergeRecordedTurns(deriveSessionChanges(snapshot), roots, recorded),
     [snapshot, roots, recorded],
   )
-  // Auto-archive (issue #5): only the newest turns stay in the main list;
-  // older completed turns collapse into the tab's bottom section, which
-  // renders nothing until opened and then only ARCHIVE_PAGE_TURNS groups
-  // per loaded page — long sessions no longer mount dozens of diff groups.
+  // Auto-archive: only the newest turns stay in the main list; older completed
+  // turns collapse into the tab's bottom section, which renders nothing until
+  // opened and then only ARCHIVE_PAGE_TURNS groups per loaded page — long
+  // sessions no longer mount dozens of diff groups.
   const { main: mainTurns, archived: archivedTurns } = useMemo(
     () => splitArchivedTurns(turns),
     [turns],
@@ -333,13 +370,33 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   archivedTurnsRef.current = archivedTurns
 
   // Deep-link plumbing: file-row elements by stateKey and turn-group sections
-  // by turn number for scrollIntoView, the last replayed meta reference, and a
+  // by turn number for scrolling, the last replayed meta reference, and a
   // pending scroll target.
   const rowRefs = useRef(new Map<string, HTMLLIElement>())
   const turnRefs = useRef(new Map<number, HTMLElement>())
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const lastSeedNonceRef = useRef<number | undefined>(undefined)
   const pendingScrollRef = useRef<PendingScroll | null>(null)
+
+  // The header's file selector covers the whole session, so a path that recurs
+  // across turns is listed once — at its LATEST occurrence, the one a reviewer
+  // most likely means.
+  const sessionFiles = useMemo(() => {
+    const byPath = new Map<string, FlatChange>()
+    for (const item of flat) byPath.set(item.path, item)
+    return [...byPath.values()]
+  }, [flat])
+  const selected = sessionFiles[Math.min(selectedIndex, Math.max(0, sessionFiles.length - 1))]
+  const selectedStats = useMemo(
+    () => (selected === undefined ? { added: 0, removed: 0 } : summarizeDiffs(selected.diffs)),
+    [selected],
+  )
+  const selectedState = selected === undefined
+    ? undefined
+    : states.get(stateKey(selected.turn, selected.path))
+  const selectedReversible = selected !== undefined
+    && selected.deleted !== true
+    && isReversible({ path: selected.path, diffs: selected.diffs })
 
   // Sidebar-tab deep link: the chat row's 审查 button (and per-file chips)
   // publish a session-scoped seed through this plugin's own channel, then
@@ -426,8 +483,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   // element.scrollIntoView({ block: 'start' }) scrolls EVERY scrollable
   // ancestor by specification, and in the sidebar panel that drags outer
   // containers along — the panel's tab-strip header rides above the body
-  // inside one of them and gets scrolled out of view (issue #4). Manual
-  // container math can never move anything but this body.
+  // inside one of them and gets scrolled out of view.
   useEffect(() => {
     if (!visible) return
     const pending = pendingScrollRef.current
@@ -514,7 +570,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
       window.clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, flatKey, tick, invoke])
+  }, [visible, flatKey, invoke])
 
   const mergeResultStates = useCallback((
     items: readonly FlatChange[],
@@ -572,14 +628,19 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     sidebar?.openFile({ sessionId, ...(cwd !== undefined ? { cwd } : {}) }, absolute, basename(absolute))
   }, [ctx, cwd, sessionId])
 
-  const totalStats = useMemo(() => flat.reduce<UnifiedDiffStats>(
-    (total, item) => addStats(total, summarizeDiffs(item.diffs)),
-    { added: 0, removed: 0 },
-  ), [flat])
+  /** Selecting a file from the header expands its row and scrolls to it. */
+  const selectFile = useCallback((index: number) => {
+    const entry = sessionFiles[index]
+    setSelectedIndex(index)
+    setMenuOpen(false)
+    if (entry === undefined) return
+    const key = stateKey(entry.turn, entry.path)
+    setExpanded(current => new Set([...current, key]))
+    pendingScrollRef.current = { rowKey: key, turn: null }
+  }, [sessionFiles])
 
-  /** Render one turn group (latest turn first). */
   const renderTurn = (turn: TurnFileChanges) => {
-    const turnStats = turn.files.reduce<UnifiedDiffStats>(
+    const turnStats = turn.files.reduce<DiffStats>(
       (total, file) => addStats(total, summarizeDiffs(file.diffs)),
       { added: 0, removed: 0 },
     )
@@ -638,6 +699,9 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     const fileAction: FileReviewAction = state === 'undone' ? 'redo' : 'undo'
     const fileBusy = busyKey === key
     const stats = summarizeDiffs(file.diffs)
+    // Built once and shared with the render; the renderer itself decides
+    // whether a one-sided change can use the side-by-side layout.
+    const hunks = isOpen ? toNativeHunks(file.diffs, 3) : []
     return (
       <li
         key={file.path}
@@ -699,23 +763,31 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
         {isOpen && (
           <div className={css.diffWrap}>
             <LazyDiff>
-              {file.deleted === true
-                ? <p className={css.diffUnavailable}>{t('deletedHint')}</p>
-                : file.diffs.length === 0
-                  ? <p className={css.diffUnavailable}>{t('unavailable')}</p>
-                  : (
-                  <UnifiedDiff
-                    diffs={file.diffs}
-                    contextLines={3}
-                    showCopyButton
-                    showFileHeaders={false}
-                    labels={{
-                      copy: t('copy'),
-                      copied: t('copied'),
-                      showUnchanged: count => t('showUnchanged', { count }),
-                      hideUnchanged: count => t('hideUnchanged', { count }),
-                    }}
-                    className={css.reviewDiff}
+              {file.deleted === true || file.diffs.length === 0
+                // Both of this plugin's "no comparison" cases map onto native's
+                // own missing state, drawn by the comparison itself.
+                ? (
+                  <NativeDiff
+                    hunks={[]}
+                    path={file.path}
+                    split={split}
+                    wrap={wrap}
+                    status="missing"
+                    labels={diffLabels}
+                  />
+                )
+                : (
+                  <NativeDiff
+                    hunks={hunks}
+                    path={file.path}
+                    split={split}
+                    wrap={wrap}
+                    note={hunks.length === 0
+                      ? 'unchanged'
+                      : file.diffs.every(diff => diff.oldText === null)
+                        ? 'created'
+                        : undefined}
+                    labels={diffLabels}
                   />
                 )}
             </LazyDiff>
@@ -725,21 +797,136 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     )
   }
 
+  const undoAction: FileReviewAction = selectedState === 'undone' ? 'redo' : 'undo'
+  const undoBusy = selected !== undefined && busyKey === stateKey(selected.turn, selected.path)
+  const undoLabel = t(undoAction === 'undo' ? 'undo' : 'redo')
+  // One stable label set for every comparison this tab draws.
+  const diffLabels: NativeDiffLabels = {
+    created: t('diffCreated'),
+    deleted: t('diffDeleted'),
+    unchanged: t('diffUnchanged'),
+    truncated: count => t('diffTruncated', { count }),
+    loading: t('diffLoading'),
+    missing: t('diffMissing'),
+  }
+
   return (
-    <div className={css.root}>
-      <header className={css.header}>
-        <span className={css.headerTitle}>{t('tabTitle')}</span>
-        {flat.length > 0 && <Stats stats={totalStats} />}
-        <button
-          type="button"
-          className={css.refreshButton}
-          disabled={statusPending}
-          title={t('refresh')}
-          onClick={() => { setTick(value => value + 1) }}
-        >
-          ⟳
-        </button>
-      </header>
+    <div className={css.root} data-changes-review="" data-file-review-tab="">
+      <div className={css.header}>
+        {selected === undefined
+          ? <span className={css.selectorLabel}>{t('tabTitle')}</span>
+          : (
+            <Menu
+              className={css.selector}
+              open={menuOpen}
+              autoFocus
+              portal
+              align="start"
+              dense
+              onClose={() => { setMenuOpen(false) }}
+              anchor={(
+                <button
+                  type="button"
+                  className={css.selectorButton}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  aria-label={t('selectFile')}
+                  title={selected.path}
+                  data-review-file={selected.path}
+                  onClick={() => { setMenuOpen(value => !value) }}
+                >
+                  <PathLabel path={selected.path} />
+                  <IconChevronDownOutlineRegular size={12} />
+                </button>
+              )}
+              items={sessionFiles.map((entry, at) => ({
+                id: String(at),
+                label: (
+                  <span className={css.item}>
+                    <span className={css.itemPath}>{entry.path}</span>
+                    <span className={css.itemCounts}>
+                      {entry.deleted === true
+                        ? <span className={css.label}>{t('deleted')}</span>
+                        : <Counts stats={summarizeDiffs(entry.diffs)} />}
+                    </span>
+                  </span>
+                ),
+              }))}
+              selectedId={String(selectedIndex)}
+              onSelect={(id) => { selectFile(Number(id)) }}
+            />
+          )}
+        {selected !== undefined && (
+          <span className={css.counts}>
+            {selected.deleted === true
+              ? <span className={css.label}>{t('deleted')}</span>
+              : <Counts stats={selectedStats} />}
+          </span>
+        )}
+        <span className={css.tools}>
+          <Tooltip label={t(split ? 'unified' : 'split')} side="bottom" delayMs={500}>
+            <button
+              type="button"
+              className={css.tool}
+              aria-pressed={split}
+              aria-label={t('splitAria')}
+              data-review-tool="split"
+              onClick={() => { setSplit(value => !value) }}
+            >
+              <IconCompareSplitOutlineRegular className={css.compareIcon} />
+            </button>
+          </Tooltip>
+          <Tooltip label={t(wrap ? 'nowrap' : 'wrap')} side="bottom" delayMs={500}>
+            <button
+              type="button"
+              className={css.tool}
+              aria-pressed={wrap}
+              aria-label={t('wrapAria')}
+              data-review-tool="wrap"
+              onClick={() => { setWrap(value => !value) }}
+            >
+              {wrap ? <IconNowrapFillRegular /> : <IconWrapFillRegular />}
+            </button>
+          </Tooltip>
+          {selected !== undefined && selected.deleted !== true && (
+            <Tooltip label={t('openFile')} side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={css.tool}
+                aria-label={t('openFileAria', { name: selected.path })}
+                data-review-tool="open-file"
+                onClick={() => { openInEditor(selected.path) }}
+              >
+                <IconInspectOutlineRegular />
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip
+            label={selectedReversible ? undoLabel : t('toggleUnavailable')}
+            side="bottom"
+            delayMs={500}
+          >
+            <button
+              type="button"
+              className={css.toolLabel}
+              aria-pressed={undoAction === 'redo'}
+              disabled={statusPending || busyKey !== null || !selectedReversible}
+              data-review-tool="toggle"
+              onClick={() => {
+                if (selected === undefined) return
+                runToggle(
+                  stateKey(selected.turn, selected.path),
+                  [{ turn: selected.turn, path: selected.path, diffs: selected.diffs }],
+                  undoAction,
+                )
+              }}
+            >
+              {undoAction === 'undo' ? <UndoIcon /> : <RedoIcon />}
+              {undoBusy ? t(undoAction === 'undo' ? 'undoing' : 'redoing') : undoLabel}
+            </button>
+          </Tooltip>
+        </span>
+      </div>
       {notice !== null && (
         <div
           className={`${css.notice} ${notice.tone === 'success' ? css.noticeSuccess : css.noticeError}`}
@@ -768,8 +955,8 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
                       {t('archived', { n: String(archivedTurns.length) })}
                     </span>
                   </button>
-                  {/* Collapsed ⇒ zero archived groups mount (issue #5); open ⇒
-                      only the loaded pages render, each diff row still lazy. */}
+                  {/* Collapsed ⇒ zero archived groups mount; open ⇒ only the
+                      loaded pages render, each diff row still lazy. */}
                   {archiveOpen && (
                     <>
                       {archivedVisible.map(renderTurn)}

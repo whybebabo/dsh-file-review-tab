@@ -128,5 +128,44 @@ check('emits CSS-module classes in sorted order', () => {
   }
 })
 
+check('the comparison carries the native FileDiff declarations verbatim', () => {
+  // Native's FileDiff is what makes a diff look like a diff anywhere in the app.
+  // These are the declarations that give it its shape; a drift here is invisible
+  // to typecheck and to a render test, but visibly wrong on screen.
+  const native = [
+    // the two-column grammar and the one-sided collapse
+    'grid-template-columns:minmax(0,1fr) minmax(0,1fr)',
+    'grid-template-columns:minmax(max-content,100%)',
+    // the single-column row grammar (numbers, sign, text)
+    'grid-template-columns:3.5em 3.5em 1.2em minmax(0,1fr)',
+    // the side-by-side row grammar (number, text)
+    'grid-template-columns:3.5em max-content',
+    // 22px line rows
+    'line-height:22px',
+    // the native diff color tokens
+    '--dsw-alias-file-diff-added-bg',
+    '--dsw-alias-file-diff-deleted-bg',
+    '--dsw-alias-file-diff-added-marker',
+    // native's empty-cell fill
+    '--diff-empty-fill',
+    // the wrap mode
+    'white-space:pre-wrap',
+    'overflow-wrap:anywhere',
+  ]
+  const missing = native.filter(needle => !source.includes(needle))
+  if (missing.length > 0) throw new Error(`missing native declarations: ${missing.join(' | ')}`)
+})
+
+check('the empty-cell fill variable is declared on the element the renderer emits', () => {
+  // Native declares `--diff-empty-fill` on FileDiff.root, which its CALLERS
+  // apply; FileDiff itself only renders `.body`. This renderer emits `.body`
+  // alone, so the variable must be declared there too or every empty split cell
+  // loses its fill. Assert it lives on a class this renderer actually renders.
+  const bodyDecl = source.match(/\.[\w$]+_body\{[^}]*--diff-empty-fill/)
+  if (bodyDecl === null) {
+    throw new Error('--diff-empty-fill is not declared on the rendered .body rule')
+  }
+})
+
 console.log(failures === 0 ? '\nALL CLIENT BUNDLE CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
 process.exitCode = failures === 0 ? 0 : 1

@@ -71,7 +71,7 @@
     "build:types": "tsc --emitDeclarationOnly --outDir lib/types",
     "build": "npm run build:types && tsdown",
     "typecheck": "tsc --noEmit",
-    "test": "node test/typert-descriptors.mjs && node test/slot-registration.mjs && node test/host-apply.mjs && node test/client-bundle.mjs && node test/card-render.mjs"
+    "test": "node test/typert-descriptors.mjs && node test/slot-registration.mjs && node test/host-apply.mjs && node test/diff-hunks.mjs && node test/client-bundle.mjs && node test/card-render.mjs && node test/tab-render.mjs"
   },
   "pnpm": {
     "ignoredBuiltDependencies": [

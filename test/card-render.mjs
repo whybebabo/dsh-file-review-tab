@@ -31,8 +31,8 @@ const check = (name, fn) => {
 }
 
 // The browser resolves platform seeds from the module system's table; node
-// cannot load the real primitives package (it imports .css), so stub the three
-// atoms the card renders and let everything else pass through.
+// cannot load the real primitives package (it imports .css), so stub the atoms
+// the card and its hover preview render and let everything else pass through.
 const React = require('react')
 const SEED = new Set(['@deepseek-ai/dsh-client-ui-primitives'])
 const seedStub = {
@@ -44,6 +44,18 @@ const seedStub = {
   IconChevronUpOutlineRegular: () => React.createElement('span', { 'data-chevron': 'up' }),
   IconListPenOutlineRegular: () => React.createElement('span', { 'data-icon': 'list-pen' }),
   IconRefreshOutlineRegular: () => React.createElement('span', { 'data-icon': 'refresh' }),
+  PathLabel: ({ path }) => React.createElement('span', { 'data-path-label': path }, path),
+  Menu: ({ anchor }) => React.createElement('span', { 'data-menu': '' }, anchor),
+  Tooltip: ({ children }) => children,
+  IconCompareSplitOutlineRegular: () => React.createElement('span', { 'data-icon': 'split' }),
+  IconWrapFillRegular: () => React.createElement('span', { 'data-icon': 'wrap' }),
+  IconNowrapFillRegular: () => React.createElement('span', { 'data-icon': 'nowrap' }),
+  IconInspectOutlineRegular: () => React.createElement('span', { 'data-icon': 'inspect' }),
+  // The native comparison surface highlights through the shared lazy
+  // highlighter. Absent grammar load → plain-text fallback, which is exactly a
+  // real first paint before a grammar arrives.
+  languageForPath: () => undefined,
+  useCodeHighlighter: () => () => undefined,
 }
 const browserRequire = (spec) => SEED.has(spec) ? seedStub : require(spec)
 

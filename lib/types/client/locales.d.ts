@@ -49,6 +49,21 @@ export declare const zh: {
     readonly stats: "新增 {added} 行，删除 {removed} 行";
     readonly unavailable: "无法为此更改还原可审查的差异。";
     readonly refresh: "刷新状态";
+    readonly selectFile: "选择要查看的文件";
+    readonly split: "切换为左右对比";
+    readonly unified: "切换为单栏对比";
+    readonly splitAria: "左右对比";
+    readonly wrap: "开启自动换行";
+    readonly nowrap: "关闭自动换行";
+    readonly wrapAria: "自动换行";
+    readonly openFile: "在侧边栏打开整个文件";
+    readonly openFileAria: "在侧边栏打开 {name}";
+    readonly diffLoading: "正在读取改动…";
+    readonly diffMissing: "这轮改动的内容已不可用";
+    readonly diffCreated: "本轮新建的文件";
+    readonly diffDeleted: "本轮删除的文件";
+    readonly diffUnchanged: "两侧内容相同";
+    readonly diffTruncated: "只显示前 {count} 行";
 };
 /** Union of this namespace's dictionary keys. */
 export type CopyKey = keyof typeof zh;
