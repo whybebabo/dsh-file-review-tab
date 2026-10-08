@@ -1,7 +1,7 @@
 {
   "name": "dsh-file-review-tab",
   "description": "Review agent-produced file changes (line-level red/green diff + undo) both as a chat turn-tail row and as a dsh-better-sidebar tab; a port of left0ver's dsh-file-review.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "keywords": [
     "deepseek-harness",
     "dsh-plugin",
@@ -61,6 +61,9 @@
         "@deepseek-ai/dsh-client-ui-renderer",
         "dsh-better-sidebar"
       ],
+      "external": [
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
       "platform": "web"
     }
   },
@@ -68,7 +71,7 @@
     "build:types": "tsc --emitDeclarationOnly --outDir lib/types",
     "build": "npm run build:types && tsdown",
     "typecheck": "tsc --noEmit",
-    "test": "node test/typert-descriptors.mjs && node test/slot-registration.mjs && node test/host-apply.mjs && node test/client-bundle.mjs"
+    "test": "node test/typert-descriptors.mjs && node test/slot-registration.mjs && node test/host-apply.mjs && node test/client-bundle.mjs && node test/card-render.mjs"
   },
   "pnpm": {
     "ignoredBuiltDependencies": [

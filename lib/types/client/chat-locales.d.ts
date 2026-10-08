@@ -6,6 +6,15 @@ export declare const en: {
     'produced.summary': string;
     'produced.editedOne': string;
     'produced.edited': string;
+    'produced.added': string;
+    'produced.deletedStat': string;
+    'produced.previewHint': string;
+    'produced.expandAria': string;
+    'produced.collapse': string;
+    'produced.collapseAria': string;
+    'produced.all': string;
+    'produced.viewDiff': string;
+    'produced.openReview': string;
     'produced.moreOne': string;
     'produced.more': string;
     'produced.open': string;

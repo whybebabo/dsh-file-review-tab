@@ -30,10 +30,32 @@ const check = (name, fn) => {
 }
 
 let loaded = null
+
+// The browser resolves these from the module system's platform seed table
+// (the shell's staticModules), not from node_modules: in the page,
+// @deepseek-ai/dsh-client-ui-primitives is already bundled into the shell, so a
+// plugin bundle only ever sees its exports object. Node cannot load it directly
+// (it imports .css), and loading the real package would not model the browser
+// anyway — so the harness supplies the same stand-in table the loader does.
+const SEED = new Set([
+  '@deepseek-ai/dsh-client-ui-primitives',
+])
+const seedStub = new Proxy({}, {
+  get: (_target, prop) => {
+    if (prop === '__esModule') return true
+    // Any atom the card uses renders as an inert element; module-scope
+    // evaluation is what this test is checking, not the rendered tree.
+    return typeof prop === 'string' && /^[A-Z]/.test(prop)
+      ? (props) => ({ $$typeof: Symbol.for('react.element'), type: prop, props })
+      : undefined
+  },
+})
+const browserRequire = (spec) => SEED.has(spec) ? seedStub : require(spec)
+
 globalThis.window = {
   __ModuleLoader__: {
     load({ id, factory }) {
-      loaded = { id, exports: factory(require) }
+      loaded = { id, exports: factory(browserRequire) }
     },
   },
 }
@@ -61,10 +83,32 @@ check('exports the service inject list', () => {
   }
 })
 
-check('bundles only react as an external require', () => {
+check('bundles only platform seeds as external requires', () => {
+  // The Web module system resolves these from its platform seed table; anything
+  // else is a build-time externals drift that would throw at runtime.
+  const allowed = new Set([
+    'react',
+    'react/jsx-runtime',
+    '@deepseek-ai/dsh-client-ui-primitives',
+  ])
   const external = [...source.matchAll(/require\("([^"]+)"\)/g)].map(m => m[1])
-  const unexpected = [...new Set(external)].filter(name => name !== 'react' && name !== 'react/jsx-runtime')
+  const unexpected = [...new Set(external)].filter(name => !allowed.has(name))
   if (unexpected.length > 0) throw new Error(`unexpected externals: ${unexpected.join(', ')}`)
+})
+
+check('reuses the native primitives card atoms', () => {
+  // Reusing these is what makes the card visually identical to the built-in one.
+  for (const symbol of ['FileTypeIcon', 'HoverCard', 'IconChevronDownOutlineRegular']) {
+    if (!source.includes(symbol)) throw new Error(`bundle does not reference ${symbol}`)
+  }
+})
+
+check('declares ui-primitives in dsh.client.external', () => {
+  const pkg = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8'))
+  const external = pkg.dsh?.client?.external
+  if (!Array.isArray(external) || !external.includes('@deepseek-ai/dsh-client-ui-primitives')) {
+    throw new Error(`dsh.client.external: ${JSON.stringify(external)}`)
+  }
 })
 
 console.log(failures === 0 ? '\nALL CLIENT BUNDLE CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)

@@ -1,14 +1,30 @@
-// ProducedFiles: the review card a finished turn ends with. Paths and hunks
-// come from mutation-tool results, never from the closing prose.
+// ProducedFiles: the review card a finished turn ends with.
 //
-// Sidebar-tab port: the original Review DRAWER (a host-grid details-column
-// hijack) is removed — it fought the better-sidebar panel for the same screen
-// edge. The 审查 button and the per-file chips now open the plugin's
-// better-sidebar 'file-review' tab instead, carrying the turn's paths (or the
-// one clicked path) as `meta.expandPaths` so the tab expands exactly those
-// diffs. The Undo/Reapply toggle is unchanged.
+// APPEARANCE: this card reproduces dsh's built-in ui-deliverables
+// `ChangedFiles` card value-for-value — same 60px header, 40px file-type tile,
+// 13px title, +N/−N counts that swap to a preview hint on hover, code-font
+// rows, and the "全部 N 个文件" fold — by rendering the SAME UI primitives the
+// built-in card uses (FileTypeIcon, HoverCard, the chevron icons) and mirroring
+// its CSS. `@deepseek-ai/dsh-client-ui-primitives` is a platform seed word of
+// the Web module system, so this bundle may `require` it at runtime; that is
+// what makes an exact match possible rather than an approximation.
+//
+// WHY IT IS NOT THE BUILT-IN CARD: the built-in header is one solid <button>
+// with no slot inside it, so no plugin can inject a control into its top-right
+// corner. Rendering the card here — in this plugin's own turnTail list entry —
+// is what buys the two extra buttons the built-in card cannot host.
+//
+// Paths and hunks come from mutation-tool results, never from the closing prose.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  FileTypeIcon,
+  HoverCard,
+  IconChevronDownOutlineRegular,
+  IconChevronUpOutlineRegular,
+  IconListPenOutlineRegular,
+  IconRefreshOutlineRegular,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
@@ -16,13 +32,15 @@ import type {
 } from '../change-types.ts'
 import { basename, selectProducedFiles, type ProducedFileReview } from './turn-deliverables.ts'
 import type { NS } from './chat-locales.ts'
-import { summarizeDiffs, type UnifiedDiffStats } from './UnifiedDiff.tsx'
-import css from './ProducedFiles.module.css'
+import { UnifiedDiff, summarizeDiffs, type UnifiedDiffStats } from './UnifiedDiff.tsx'
+import css from './ProducedCard.module.css'
+import toastCss from './ProducedFiles.module.css'
 
-/** Keep the turn-tail card compact; the sidebar tab always lists every file. */
-const SHOWN_LIMIT = 6
+/** Rows shown before the fold; the built-in card uses the same summary height. */
+const COLLAPSED_ROWS = 4
 const SUCCESS_NOTICE_DURATION = 2000
 const ERROR_NOTICE_DURATION = 5000
+const GROUPED = new Intl.NumberFormat('en-US')
 
 interface NoticeFile {
   readonly path: string
@@ -45,13 +63,13 @@ interface ToggleNotice {
  * closing turn produced no files.
  */
 export type ProducedFilesProps = TurnTailOwnerProps & {
-  /** Session workspace root (reserved; the chat card shows tool paths verbatim). */
+  /** Session workspace root, used to resolve the hover preview's path label. */
   projectRoot?: string | undefined
   inspectChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>
   applyChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>
   /**
    * Open the plugin's sidebar tab with the given paths pre-expanded
-   * (the 审查 button passes every produced path; a file chip passes its own).
+   * (the 审查 button passes every produced path; a file row passes its own).
    * The owning turn number rides along so the tab expands only this turn's
    * rows — a path that recurs in other turns stays collapsed there.
    */
@@ -67,27 +85,25 @@ const unavailableChanges = async (request: FileReviewRequest): Promise<FileRevie
   })),
 })
 
-function FileIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className={css.icon}>
-      <path d="M5.25 2.75h6l3.5 3.5v10a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1V3.75a1 1 0 0 1 1-1Z" />
-      <path d="M11.25 2.75v3.5h3.5M7 10h5M7 13h5" />
-    </svg>
-  )
-}
-
-function ReviewIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className={css.buttonIcon}>
-      <path d="M4.5 3.5h8a1 1 0 0 1 1 1v3M6.5 6.5h4M6.5 9.5h2.25" />
-      <path d="m10.5 13 1.5 1.5 3.5-4" />
-    </svg>
-  )
+/**
+ * Resolve a tool path against the session root for the hover preview label,
+ * the way the built-in card labels its preview. An already-absolute path is
+ * shown verbatim, and the join separator follows the root so a POSIX workspace
+ * does not get a Windows path.
+ * @param root - session workspace root, when known.
+ * @param path - tool-reported path (absolute or workspace-relative).
+ * @returns the display path.
+ */
+function displayPath(root: string | undefined, path: string): string {
+  if (root === undefined || path === '') return path
+  if (/^([a-zA-Z]:[\\/]|[\\/])/.test(path)) return path
+  const separator = root.includes('\\') ? '\\' : '/'
+  return `${root.replace(/[\\/]+$/, '')}${separator}${path}`
 }
 
 function CloseIcon() {
   return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className={css.closeIcon}>
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={toastCss.closeIcon}>
       <path d="m5.5 5.5 9 9m0-9-9 9" />
     </svg>
   )
@@ -95,7 +111,7 @@ function CloseIcon() {
 
 function SuccessIcon() {
   return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className={css.noticeIconSvg}>
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={toastCss.noticeIconSvg}>
       <path d="m5 10 3.25 3.25L15 6.5" />
     </svg>
   )
@@ -103,7 +119,7 @@ function SuccessIcon() {
 
 function ErrorIcon() {
   return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className={css.noticeIconSvg}>
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={toastCss.noticeIconSvg}>
       <circle cx="10" cy="10" r="6.5" />
       <path d="m7.5 7.5 5 5m0-5-5 5" />
     </svg>
@@ -130,22 +146,22 @@ function ResultToast({
   }, [notice.tone, onDone])
   return (
     <div
-      className={`${css.toast} ${notice.tone === 'success' ? css.toastSuccess : css.toastError}`}
+      className={`${toastCss.toast} ${notice.tone === 'success' ? toastCss.toastSuccess : toastCss.toastError}`}
       role="alert"
     >
-      <div className={css.toastHeader}>
-        <span className={css.noticeIcon}>
+      <div className={toastCss.toastHeader}>
+        <span className={toastCss.noticeIcon}>
           {notice.tone === 'success' ? <SuccessIcon /> : <ErrorIcon />}
         </span>
-        <div className={css.toastCopy}>
-          <strong className={css.toastTitle}>{notice.title}</strong>
+        <div className={toastCss.toastCopy}>
+          <strong className={toastCss.toastTitle}>{notice.title}</strong>
           {notice.description !== undefined && (
-            <span className={css.toastDescription}>{notice.description}</span>
+            <span className={toastCss.toastDescription}>{notice.description}</span>
           )}
         </div>
         <button
           type="button"
-          className={css.toastCloseButton}
+          className={toastCss.toastCloseButton}
           aria-label={closeLabel}
           onClick={onDone}
         >
@@ -153,19 +169,19 @@ function ResultToast({
         </button>
       </div>
       {notice.files.length > 0 && (
-        <div className={css.noticeFiles}>
-          <span className={css.noticeFileListLabel}>{fileListLabel}</span>
-          <ul className={css.noticeFileList}>
+        <div className={toastCss.noticeFiles}>
+          <span className={toastCss.noticeFileListLabel}>{fileListLabel}</span>
+          <ul className={toastCss.noticeFileList}>
             {notice.files.map(file => (
               <li key={file.path}>
                 <button
                   type="button"
-                  className={css.noticeFileButton}
+                  className={toastCss.noticeFileButton}
                   aria-label={fileOpenLabel(file.path)}
                   onClick={() => { openFile(file.path) }}
                 >
-                  <span className={css.noticeFilePath}>{basename(file.path)}</span>
-                  <span className={css.noticeFileArrow} aria-hidden="true">↗</span>
+                  <span className={toastCss.noticeFilePath}>{basename(file.path)}</span>
+                  <span className={toastCss.noticeFileArrow} aria-hidden="true">↗</span>
                 </button>
               </li>
             ))}
@@ -173,7 +189,7 @@ function ResultToast({
         </div>
       )}
       {notice.tone === 'error' && (
-        <button type="button" className={css.noticeDismissButton} onClick={onDone}>
+        <button type="button" className={toastCss.noticeDismissButton} onClick={onDone}>
           {dismissLabel}
         </button>
       )}
@@ -185,12 +201,44 @@ function addStats(left: UnifiedDiffStats, right: UnifiedDiffStats): UnifiedDiffS
   return { added: left.added + right.added, removed: left.removed + right.removed }
 }
 
-function Stats({ stats, label }: { readonly stats: UnifiedDiffStats; readonly label: string }) {
+/** Added and deleted counts in the card's colors; native renders the same pair. */
+function Counts({ stats, label }: { readonly stats: UnifiedDiffStats; readonly label: string }) {
   return (
-    <span className={css.stats} aria-label={label}>
-      <span className={css.added}>+{stats.added}</span>
-      <span className={css.removed}>-{stats.removed}</span>
+    <span className={css.statCounts} aria-label={label}>
+      <span className={css.added}>+{GROUPED.format(stats.added)}</span>
+      <span className={css.deleted}>-{GROUPED.format(stats.removed)}</span>
     </span>
+  )
+}
+
+/** The hover preview: path label plus the same unified diff the sidebar shows. */
+function ChangedFilePreview({
+  display, reviews, t,
+}: {
+  readonly display: string
+  readonly reviews: readonly ProducedFileReview[]
+  readonly t: ProducedFilesProps['t']
+}) {
+  return (
+    <div className={css.preview} data-changes-hover-preview="">
+      <div className={css.previewHeader}>
+        <span className={css.previewPath} data-changes-preview-path="">{display}</span>
+      </div>
+      <div className={css.previewBody}>
+        <UnifiedDiff
+          diffs={reviews.flatMap(review => review.diffs)}
+          contextLines={2}
+          showCopyButton={false}
+          showFileHeaders={false}
+          labels={{
+            copy: t('review.copy'),
+            copied: t('review.copied'),
+            showUnchanged: count => t('review.showUnchanged', { count: String(count) }),
+            hideUnchanged: count => t('review.hideUnchanged', { count: String(count) }),
+          }}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -211,20 +259,25 @@ export function ProducedFiles(props: ProducedFilesProps) {
   return <ProducedFilesCard {...props} reviews={reviews} />
 }
 
-/** The review card itself: one turn's produced files plus the undo/redo toggle. */
+/**
+ * The card itself: the native ChangedFiles layout plus the two action buttons
+ * in the header's top-right corner.
+ */
 function ProducedFilesCard({
-  reviews, openFile, turn: turnLocation,
+  reviews, openFile, turn: turnLocation, projectRoot,
   inspectChanges = unavailableChanges, applyChanges = unavailableChanges,
   openInSidebarTab, t,
 }: ProducedFilesProps & { readonly reviews: readonly ProducedFileReview[] }) {
   // The owning turn number (TurnLocation.turn) rides every deep link so the
   // sidebar tab expands this turn's rows only.
   const turnNumber = turnLocation.turn
+  const [expanded, setExpanded] = useState(false)
   const [toggleAction, setToggleAction] = useState<FileReviewAction>('undo')
   const [statusPending, setStatusPending] = useState(true)
   const [togglePending, setTogglePending] = useState(false)
   const [toast, setToast] = useState<ToggleNotice | null>(null)
   const toastSeqRef = useRef(0)
+  const cardRef = useRef<HTMLDivElement>(null)
 
   const reviewsWithStats = useMemo(() => reviews.map(review => ({
     review,
@@ -238,7 +291,7 @@ function ProducedFilesCard({
     [reviewsWithStats],
   )
   // Deleted paths carry no hunks and cannot be inspected or toggled; they are
-  // display vocabulary on the chips only.
+  // display vocabulary on the rows only.
   const toggleFiles = useMemo(() => reviews
     .filter(review => review.deleted !== true)
     .map(review => ({ path: review.path, diffs: review.diffs })), [reviews])
@@ -250,12 +303,16 @@ function ProducedFilesCard({
       && (diff.oldText !== '' || diff.oldStart !== undefined)
       && (diff.newText !== '' || diff.newStart !== undefined))).map(review => review.path)), [reviews])
   const hasReversibleFiles = reversiblePaths.size > 0
-  const shown = reviewsWithStats.slice(0, SHOWN_LIMIT)
-  const hidden = reviewsWithStats.length - shown.length
+  // Native folds at COLLAPSED_ROWS with "All N files"; a single file is
+  // header-only, exactly like the built-in card.
+  const singleFile = reviewsWithStats.length === 1 ? reviewsWithStats[0] : undefined
+  const foldable = reviewsWithStats.length > COLLAPSED_ROWS
+  const rows = foldable && !expanded ? reviewsWithStats.slice(0, COLLAPSED_ROWS) : reviewsWithStats
   const allPaths = useMemo(() => reviews.map(review => review.path), [reviews])
-  // A turn that only deleted files reads as a deletion summary, not an edit.
-  const allDeleted = reviews.length > 0 && reviews.every(review => review.deleted === true)
-  const statsMatter = totalStats.added > 0 || totalStats.removed > 0
+
+  const openReview = useCallback((paths: readonly string[]) => {
+    openInSidebarTab?.(paths, turnNumber)
+  }, [openInSidebarTab, turnNumber])
 
   const showToast = useCallback((notice: Omit<ToggleNotice, 'seq'>) => {
     toastSeqRef.current += 1
@@ -334,84 +391,161 @@ function ProducedFilesCard({
     statusPending, toggleAction, toggleFiles, togglePending,
   ])
 
+  const undoLabel = toggleAction === 'undo' ? t('produced.undo') : t('produced.redo')
+  const undoPendingLabel = toggleAction === 'undo' ? t('produced.undoing') : t('produced.redoing')
+
+  // Native header: tile + titles in one click target that opens the review.
+  const headerMain = (
+    <button
+      type="button"
+      className={css.headerMain}
+      aria-label={singleFile === undefined
+        ? t('produced.openReview')
+        : t('produced.viewDiff', { name: singleFile.review.path })}
+      title={singleFile?.review.path}
+      onClick={() => { openReview(singleFile === undefined ? allPaths : [singleFile.review.path]) }}
+    >
+      <span className={css.tile}>
+        {/* Native shows a generic code glyph for a mixed list and the real
+            file-type glyph when the card represents one file. */}
+        {singleFile === undefined
+          ? <FileTypeIcon kind="code" size={20} />
+          : <FileTypeIcon path={singleFile.review.path} size={20} />}
+      </span>
+      <span className={css.titles}>
+        <span className={css.title}>
+          {singleFile === undefined
+            ? t('produced.edited', { count: String(reviewsWithStats.length) })
+            : t('produced.editedOne', { name: basename(singleFile.review.path) })}
+        </span>
+        <span className={css.stat}>
+          <Counts
+            stats={singleFile?.stats ?? totalStats}
+            label={t('review.stats', {
+              added: String((singleFile?.stats ?? totalStats).added),
+              removed: String((singleFile?.stats ?? totalStats).removed),
+            })}
+          />
+          <span className={css.previewHint}>{t('produced.previewHint')}</span>
+        </span>
+      </span>
+    </button>
+  )
+
   return (
     <>
-      <section className={css.card} aria-label={t('produced.summary')}>
-        <header className={css.cardHeader}>
-          <span className={css.fileIconWrap}><FileIcon /></span>
-          <div className={css.cardTitleBlock}>
-            <span className={css.cardTitle}>
-              {allDeleted
-                ? (reviews.length === 1
-                  ? t('produced.deletedOne')
-                  : t('produced.deletedAll', { count: String(reviews.length) }))
-                : reviews.length === 1
-                  ? t('produced.editedOne')
-                  : t('produced.edited', { count: String(reviews.length) })}
-            </span>
-            {statsMatter && (
-              <Stats
-                stats={totalStats}
-                label={t('review.stats', {
-                  added: String(totalStats.added), removed: String(totalStats.removed),
-                })}
-              />
-            )}
-          </div>
-          <button
-            type="button"
-            className={css.toggleButton}
-            disabled={statusPending || togglePending || !hasReversibleFiles}
-            title={!hasReversibleFiles ? t('produced.toggleUnavailable') : undefined}
-            aria-label={toggleAction === 'undo' ? t('produced.undo') : t('produced.redo')}
-            onClick={runToggle}
-          >
-            {togglePending
-              ? (toggleAction === 'undo' ? t('produced.undoing') : t('produced.redoing'))
-              : (toggleAction === 'undo' ? t('produced.undo') : t('produced.redo'))}
-          </button>
-          <button
-            type="button"
-            className={css.reviewButton}
-            aria-label={t('produced.reviewAll')}
-            onClick={() => { openInSidebarTab?.(allPaths, turnNumber) }}
-          >
-            <ReviewIcon />
-            {t('review.title')}
-          </button>
-        </header>
-        <div className={css.fileList}>
-          {shown.map(({ review, stats }) => (
-            <button
-              key={review.path}
-              type="button"
-              className={css.fileRow}
-              title={review.path}
-              aria-label={t('produced.review', { name: review.path })}
-              onClick={() => { openInSidebarTab?.([review.path], turnNumber) }}
-            >
-              <span className={css.fileName}>{basename(review.path)}</span>
-              {review.deleted === true
-                ? <span className={css.deletedBadge}>{t('produced.deleted')}</span>
-                : (
-                  <Stats
-                    stats={stats}
-                    label={t('review.stats', {
-                      added: String(stats.added), removed: String(stats.removed),
-                    })}
+      <div
+        ref={cardRef}
+        className={css.card}
+        data-changed-files=""
+        data-single={singleFile !== undefined ? 'true' : undefined}
+        data-file-review-tab=""
+      >
+        <div className={css.header}>
+          {singleFile === undefined
+            ? headerMain
+            : (
+              <HoverCard
+                variant="preview"
+                widthAnchorRef={cardRef}
+                openDelayMs={500}
+                anchor={headerMain}
+                content={(
+                  <ChangedFilePreview
+                    display={displayPath(projectRoot, singleFile.review.path)}
+                    reviews={[singleFile.review]}
+                    t={t}
                   />
                 )}
+              />
+            )}
+          <div className={css.actions}>
+            <button
+              type="button"
+              className={css.actionButton}
+              disabled={statusPending || togglePending || !hasReversibleFiles}
+              title={!hasReversibleFiles ? t('produced.toggleUnavailable') : undefined}
+              aria-label={undoLabel}
+              onClick={runToggle}
+            >
+              <IconRefreshOutlineRegular className={css.actionIcon} />
+              {togglePending ? undoPendingLabel : undoLabel}
             </button>
-          ))}
-          {hidden > 0 && (
-            <div className={css.moreFiles}>
-              {hidden === 1
-                ? t('produced.moreOne')
-                : t('produced.more', { count: String(hidden) })}
-            </div>
-          )}
+            <button
+              type="button"
+              className={css.actionButton}
+              aria-label={t('review.title')}
+              onClick={() => { openReview(allPaths) }}
+            >
+              <IconListPenOutlineRegular className={css.actionIcon} />
+              {t('review.title')}
+            </button>
+          </div>
         </div>
-      </section>
+
+        {singleFile === undefined && (
+          <ul className={css.list}>
+            {rows.map(({ review, stats }) => (
+              <li key={review.path}>
+                <HoverCard
+                  variant="preview"
+                  widthAnchorRef={cardRef}
+                  openDelayMs={500}
+                  content={(
+                    <ChangedFilePreview
+                      display={displayPath(projectRoot, review.path)}
+                      reviews={[review]}
+                      t={t}
+                    />
+                  )}
+                  anchor={(
+                    <button
+                      type="button"
+                      className={css.row}
+                      title={review.path}
+                      aria-label={t('produced.viewDiff', { name: review.path })}
+                      onClick={() => { openReview([review.path]) }}
+                    >
+                      <span className={css.path}>{review.path}</span>
+                      <span className={css.counts}>
+                        {review.deleted === true
+                          ? <span className={css.deletedBadge}>{t('produced.deleted')}</span>
+                          : (
+                            <Counts
+                              stats={stats}
+                              label={t('review.stats', {
+                                added: String(stats.added), removed: String(stats.removed),
+                              })}
+                            />
+                          )}
+                      </span>
+                    </button>
+                  )}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {foldable && (
+          <button
+            type="button"
+            className={css.toggle}
+            aria-expanded={expanded}
+            aria-label={expanded
+              ? t('produced.collapseAria')
+              : t('produced.expandAria', { count: String(reviewsWithStats.length) })}
+            onClick={() => { setExpanded(value => !value) }}
+          >
+            <span>
+              {expanded
+                ? t('produced.collapse')
+                : t('produced.all', { count: String(reviewsWithStats.length) })}
+            </span>
+            {expanded ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
+          </button>
+        )}
+      </div>
 
       {toast !== null && (
         <ResultToast

@@ -9,6 +9,11 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
 const CLIENT_EXTERNALS = [
   'react',
   'react/jsx-runtime',
+  // Platform seed words resolved by the Web module system at runtime (the same
+  // list the shell hands `createClientModuleSystem`). Primitives supplies the
+  // FileTypeIcon/HoverCard/chevrons the native deliverables card renders, so
+  // reusing them is what keeps this card visually identical to the built-in one.
+  '@deepseek-ai/dsh-client-ui-primitives',
 ] as const
 
 /** Compile CSS Modules into package-owned style elements understood by the Web plugin loader. */

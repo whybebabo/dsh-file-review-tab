@@ -248,7 +248,7 @@ export function UnifiedDiff({
                 </header>
               )
               : !firstForPath && (hunk?.unchangedBefore ?? 0) === 0
-                ? <div className={css.unifiedHunkHeader}>@@ -{diff.oldStart ?? 1} +{diff.newStart ?? 1} @@</div>
+                ? <div className={css.unifiedHunkHeader} data-diff-hunk-header="">@@ -{diff.oldStart ?? 1} +{diff.newStart ?? 1} @@</div>
                 : null}
             <div className={css.unifiedBody}>
               {(hunk?.unchangedBefore ?? 0) > 0 && (

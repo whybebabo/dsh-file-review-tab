@@ -11,13 +11,13 @@ import type { NS } from './chat-locales.ts';
  * closing turn produced no files.
  */
 export type ProducedFilesProps = TurnTailOwnerProps & {
-    /** Session workspace root (reserved; the chat card shows tool paths verbatim). */
+    /** Session workspace root, used to resolve the hover preview's path label. */
     projectRoot?: string | undefined;
     inspectChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>;
     applyChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>;
     /**
      * Open the plugin's sidebar tab with the given paths pre-expanded
-     * (the 审查 button passes every produced path; a file chip passes its own).
+     * (the 审查 button passes every produced path; a file row passes its own).
      * The owning turn number rides along so the tab expands only this turn's
      * rows — a path that recurs in other turns stays collapsed there.
      */
