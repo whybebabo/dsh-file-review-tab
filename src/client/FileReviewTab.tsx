@@ -42,10 +42,16 @@ import {
   mergeRecordedTurns, resolveSessionPath, splitArchivedTurns,
   type SessionFileChange, type TurnFileChanges,
 } from './session-changes.ts'
-import { summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
+import { diffNote, missingMessage, summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
 import { NativeDiff, type NativeDiffLabels } from './NativeDiff.tsx'
 import { t } from './locales.ts'
-import { currentFileReviewSeed, subscribeFileReviewSeed, type FileReviewSeed } from './deep-link.ts'
+import {
+  currentFileReviewSeed,
+  publishFileReviewInvalidation,
+  subscribeFileReviewInvalidation,
+  subscribeFileReviewSeed,
+  type FileReviewSeed,
+} from './deep-link.ts'
 import css from './FileReviewTab.module.css'
 
 const SUCCESS_NOTICE_DURATION = 3000
@@ -227,8 +233,20 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   const [wrap, setWrap] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [statusVersion, setStatusVersion] = useState(0)
   const noticeSeqRef = useRef(0)
   const noticeTimerRef = useRef<number | null>(null)
+
+  useEffect(() => subscribeFileReviewInvalidation((ownerSessionId) => {
+    if (ownerSessionId === sessionId) setStatusVersion(value => value + 1)
+  }), [sessionId])
+
+  useEffect(() => {
+    if (!visible) return
+    const refresh = () => { setStatusVersion(value => value + 1) }
+    window.addEventListener('focus', refresh)
+    return () => { window.removeEventListener('focus', refresh) }
+  }, [visible])
 
   // Live Conversation projection for THIS session. dsh 0.1.5 moved the
   // projection off SessionFace (whose getSnapshot now returns the session
@@ -279,7 +297,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
         })
         .catch(() => {
           // Transient fetch failure: keep the previous record; the next
-          // snapshot / refresh round retries.
+          // snapshot, focus or review action retries.
         })
     }, 200)
     return () => {
@@ -287,7 +305,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
       window.clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, rootsKey, sessions, sessionId])
+  }, [visible, rootsKey, statusVersion, sessions, sessionId])
 
   const turns = useMemo(
     () => mergeRecordedTurns(deriveSessionChanges(snapshot), roots, recorded),
@@ -579,7 +597,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
       window.clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, flatKey, invoke])
+  }, [visible, flatKey, statusVersion, invoke])
 
   const mergeResultStates = useCallback((
     items: readonly FlatChange[],
@@ -608,6 +626,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
       files: items.map(item => ({ path: item.path, diffs: item.diffs })),
     }).then((result) => {
       mergeResultStates(items, result)
+      publishFileReviewInvalidation(sessionId)
       const target = action === 'undo' ? 'undone' : 'applied'
       const failures = result.files.filter(file => file.state !== target)
       if (failures.length === 0) {
@@ -618,7 +637,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     }).catch((error: unknown) => {
       showNotice('error', `${t('toggleError')}: ${error instanceof Error ? error.message : String(error)}`)
     }).finally(() => { setBusyKey(null) })
-  }, [busyKey, invoke, mergeResultStates, showNotice])
+  }, [busyKey, invoke, mergeResultStates, sessionId, showNotice])
 
   const toggleExpanded = useCallback((key: string) => {
     setExpanded((current) => {
@@ -774,7 +793,10 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
             <LazyDiff>
               {file.deleted === true || file.diffs.length === 0
                 // Both of this plugin's "no comparison" cases map onto native's
-                // own missing state, drawn by the comparison itself.
+                // own missing state, drawn by the comparison itself. A
+                // terminal-deleted file keeps its own explanation: the content
+                // was never missing, it is gone, and the row's tooltip already
+                // says so — the body must not contradict it.
                 ? (
                   <NativeDiff
                     hunks={[]}
@@ -782,7 +804,10 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
                     split={split}
                     wrap={wrap}
                     status="missing"
-                    labels={diffLabels}
+                    labels={{
+                      ...diffLabels,
+                      missing: missingMessage(file.deleted === true, t('deletedHint'), diffLabels.missing),
+                    }}
                   />
                 )
                 : (
@@ -791,11 +816,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
                     path={file.path}
                     split={split}
                     wrap={wrap}
-                    note={hunks.length === 0
-                      ? 'unchanged'
-                      : file.diffs.every(diff => diff.oldText === null)
-                        ? 'created'
-                        : undefined}
+                    note={diffNote(file.diffs, hunks)}
                     labels={diffLabels}
                   />
                 )}

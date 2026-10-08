@@ -13,6 +13,8 @@ import type { NS } from './chat-locales.ts';
 export type ProducedFilesProps = TurnTailOwnerProps & {
     /** Session workspace root, used to resolve the hover preview's path label. */
     projectRoot?: string | undefined;
+    /** Session key used to synchronize undo/redo state with the sidebar tab. */
+    reviewSessionId?: string | undefined;
     inspectChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>;
     applyChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>;
     /**

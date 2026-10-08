@@ -36,7 +36,7 @@ import { FileReviewTab } from './FileReviewTab.tsx'
 import { ProducedFiles } from './ProducedFiles.tsx'
 import { normalizeSnapshot } from './snapshot-compat.ts'
 import { attachLocale, en, LOCALE_NS, t, zh } from './locales.ts'
-import { publishFileReviewSeed } from './deep-link.ts'
+import { publishFileReviewInvalidation, publishFileReviewSeed } from './deep-link.ts'
 import {
   en as chatEn, NS as CHAT_NS, zh as chatZh, type DeliverablesKey,
 } from './chat-locales.ts'
@@ -225,8 +225,13 @@ export function apply(ctx: Context): void {
         }
         return {
           projectRoot,
+          reviewSessionId: sessionId,
           inspectChanges: (request: FileReviewRequest) => invoke('status', request),
-          applyChanges: (request: FileReviewRequest) => invoke('apply', request),
+          applyChanges: async (request: FileReviewRequest) => {
+            const result = await invoke('apply', request)
+            publishFileReviewInvalidation(sessionId)
+            return result
+          },
           // 审查 button / per-file chip: publish the target through the
           // plugin's own seed channel, then open (or focus) the sidebar tab by
           // type. better-sidebar 0.19.1 mints native tab ids itself and cannot

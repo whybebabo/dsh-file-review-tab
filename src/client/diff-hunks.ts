@@ -33,6 +33,9 @@ export interface DiffStats {
   readonly removed: number
 }
 
+/** Optional native note shown above a comparison. */
+export type DiffNote = 'created' | 'deleted' | 'unchanged' | undefined
+
 /**
  * One comparison in the shape dsh's own FileDiff renders: a header coordinate
  * pair plus `+`/`-`/` ` prefixed lines.
@@ -94,6 +97,31 @@ export function summarizeDiffs(diffs: readonly ProducedFileDiff[]): DiffStats {
     }
   }
   return { added, removed }
+}
+
+/** Derive the comparison note from the recorded change rather than hunk count alone. */
+export function diffNote(
+  diffs: readonly ProducedFileDiff[],
+  hunks: readonly NativeDiffHunk[],
+  deleted = false,
+): DiffNote {
+  if (deleted) return 'deleted'
+  if (diffs.length > 0 && diffs.every(diff => diff.oldText === null)) return 'created'
+  return hunks.length === 0 ? 'unchanged' : undefined
+}
+
+/**
+ * The message a comparison with nothing to draw shows. A file removed by a
+ * command has no content left, which is a different fact from a change whose
+ * two sides could not be reconstructed — so it keeps its own explanation
+ * instead of the generic one.
+ * @param deleted - whether the change removed the file.
+ * @param deletedHint - copy for a command-deleted file.
+ * @param missing - copy for a change that cannot be reconstructed.
+ * @returns the copy to show.
+ */
+export function missingMessage(deleted: boolean, deletedHint: string, missing: string): string {
+  return deleted ? deletedHint : missing
 }
 
 /** The half-open line range one hunk keeps, after context trimming. */

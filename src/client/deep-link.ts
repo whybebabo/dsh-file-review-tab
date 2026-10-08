@@ -24,10 +24,12 @@ export interface FileReviewSeed {
   readonly nonce: number
 }
 
-type Listener = (sessionId: string, seed: FileReviewSeed) => void
+type SeedListener = (sessionId: string, seed: FileReviewSeed) => void
+type InvalidationListener = (sessionId: string) => void
 
 const latest = new Map<string, FileReviewSeed>()
-const listeners = new Set<Listener>()
+const listeners = new Set<SeedListener>()
+const invalidationListeners = new Set<InvalidationListener>()
 let nonce = 0
 
 /** Publish a deep link for one session and return the stored seed. */
@@ -53,7 +55,18 @@ export function currentFileReviewSeed(sessionId: string): FileReviewSeed | undef
 }
 
 /** Observe every publish; the caller filters by session. */
-export function subscribeFileReviewSeed(listener: Listener): () => void {
+export function subscribeFileReviewSeed(listener: SeedListener): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
+}
+
+/** Notify every mounted review surface that one session's disk state changed. */
+export function publishFileReviewInvalidation(sessionId: string): void {
+  for (const listener of invalidationListeners) listener(sessionId)
+}
+
+/** Observe disk-state invalidations issued by this plugin's review surfaces. */
+export function subscribeFileReviewInvalidation(listener: InvalidationListener): () => void {
+  invalidationListeners.add(listener)
+  return () => { invalidationListeners.delete(listener) }
 }

@@ -32,8 +32,9 @@ import type {
 } from '../change-types.ts'
 import { basename, selectProducedFiles, type ProducedFileReview } from './turn-deliverables.ts'
 import type { NS } from './chat-locales.ts'
-import { summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
+import { diffNote, summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
 import { NativeDiff } from './NativeDiff.tsx'
+import { subscribeFileReviewInvalidation } from './deep-link.ts'
 import css from './ProducedCard.module.css'
 import toastCss from './ProducedFiles.module.css'
 
@@ -66,6 +67,8 @@ interface ToggleNotice {
 export type ProducedFilesProps = TurnTailOwnerProps & {
   /** Session workspace root, used to resolve the hover preview's path label. */
   projectRoot?: string | undefined
+  /** Session key used to synchronize undo/redo state with the sidebar tab. */
+  reviewSessionId?: string | undefined
   inspectChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>
   applyChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>
   /**
@@ -220,6 +223,9 @@ function ChangedFilePreview({
   readonly reviews: readonly ProducedFileReview[]
   readonly t: ProducedFilesProps['t']
 }) {
+  const diffs = reviews.flatMap(review => review.diffs)
+  const hunks = toNativeHunks(diffs, 2)
+  const note = diffNote(diffs, hunks, reviews.every(review => review.deleted === true))
   return (
     <div className={css.preview} data-changes-hover-preview="">
       <div className={css.previewHeader}>
@@ -227,10 +233,11 @@ function ChangedFilePreview({
       </div>
       <div className={css.previewBody}>
         <NativeDiff
-          hunks={toNativeHunks(reviews.flatMap(review => review.diffs), 2)}
+          hunks={hunks}
           path={display}
           split={false}
           wrap={false}
+          note={note}
           labels={{
             created: t('diff.created'),
             deleted: t('diff.deleted'),
@@ -267,7 +274,7 @@ export function ProducedFiles(props: ProducedFilesProps) {
  * in the header's top-right corner.
  */
 function ProducedFilesCard({
-  reviews, openFile, turn: turnLocation, projectRoot,
+  reviews, openFile, turn: turnLocation, projectRoot, reviewSessionId,
   inspectChanges = unavailableChanges, applyChanges = unavailableChanges,
   openInSidebarTab, t,
 }: ProducedFilesProps & { readonly reviews: readonly ProducedFileReview[] }) {
@@ -278,6 +285,7 @@ function ProducedFilesCard({
   const [toggleAction, setToggleAction] = useState<FileReviewAction>('undo')
   const [statusPending, setStatusPending] = useState(true)
   const [togglePending, setTogglePending] = useState(false)
+  const [statusVersion, setStatusVersion] = useState(0)
   const [toast, setToast] = useState<ToggleNotice | null>(null)
   const toastSeqRef = useRef(0)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -312,6 +320,14 @@ function ProducedFilesCard({
   const foldable = reviewsWithStats.length > COLLAPSED_ROWS
   const rows = foldable && !expanded ? reviewsWithStats.slice(0, COLLAPSED_ROWS) : reviewsWithStats
   const allPaths = useMemo(() => reviews.map(review => review.path), [reviews])
+  const allDeleted = reviews.every(review => review.deleted === true)
+
+  useEffect(() => {
+    if (reviewSessionId === undefined) return
+    return subscribeFileReviewInvalidation((ownerSessionId) => {
+      if (ownerSessionId === reviewSessionId) setStatusVersion(value => value + 1)
+    })
+  }, [reviewSessionId])
 
   const openReview = useCallback((paths: readonly string[]) => {
     openInSidebarTab?.(paths, turnNumber)
@@ -350,7 +366,7 @@ function ProducedFilesCard({
       if (active) setStatusPending(false)
     })
     return () => { active = false }
-  }, [inspectChanges, reversiblePaths, toggleFiles])
+  }, [inspectChanges, reversiblePaths, statusVersion, toggleFiles])
 
   const runToggle = useCallback(() => {
     if (statusPending || togglePending || !hasReversibleFiles) return
@@ -417,18 +433,26 @@ function ProducedFilesCard({
       </span>
       <span className={css.titles}>
         <span className={css.title}>
-          {singleFile === undefined
-            ? t('produced.edited', { count: String(reviewsWithStats.length) })
-            : t('produced.editedOne', { name: basename(singleFile.review.path) })}
+          {allDeleted
+            ? t(singleFile === undefined ? 'produced.deletedAll' : 'produced.deletedOne', {
+              count: String(reviewsWithStats.length),
+            })
+            : singleFile === undefined
+              ? t('produced.edited', { count: String(reviewsWithStats.length) })
+              : t('produced.editedOne', { name: basename(singleFile.review.path) })}
         </span>
         <span className={css.stat}>
-          <Counts
-            stats={singleFile?.stats ?? totalStats}
-            label={t('review.stats', {
-              added: String((singleFile?.stats ?? totalStats).added),
-              removed: String((singleFile?.stats ?? totalStats).removed),
-            })}
-          />
+          {allDeleted
+            ? <span className={css.deletedBadge}>{t('produced.deleted')}</span>
+            : (
+              <Counts
+                stats={singleFile?.stats ?? totalStats}
+                label={t('review.stats', {
+                  added: String((singleFile?.stats ?? totalStats).added),
+                  removed: String((singleFile?.stats ?? totalStats).removed),
+                })}
+              />
+            )}
           <span className={css.previewHint}>{t('produced.previewHint')}</span>
         </span>
       </span>

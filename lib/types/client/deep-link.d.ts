@@ -22,12 +22,17 @@ export interface FileReviewSeed {
     /** Monotonic publish id; a new value means a new link to replay. */
     readonly nonce: number;
 }
-type Listener = (sessionId: string, seed: FileReviewSeed) => void;
+type SeedListener = (sessionId: string, seed: FileReviewSeed) => void;
+type InvalidationListener = (sessionId: string) => void;
 /** Publish a deep link for one session and return the stored seed. */
 export declare function publishFileReviewSeed(sessionId: string, paths: readonly string[], turn?: number): FileReviewSeed;
 /** The most recent seed for a session, if the tab has not consumed it yet. */
 export declare function currentFileReviewSeed(sessionId: string): FileReviewSeed | undefined;
 /** Observe every publish; the caller filters by session. */
-export declare function subscribeFileReviewSeed(listener: Listener): () => void;
+export declare function subscribeFileReviewSeed(listener: SeedListener): () => void;
+/** Notify every mounted review surface that one session's disk state changed. */
+export declare function publishFileReviewInvalidation(sessionId: string): void;
+/** Observe disk-state invalidations issued by this plugin's review surfaces. */
+export declare function subscribeFileReviewInvalidation(listener: InvalidationListener): () => void;
 export {};
 //# sourceMappingURL=deep-link.d.ts.map

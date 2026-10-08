@@ -45,7 +45,7 @@ check('the diff core is bundled into the client artifact', () => {
 // Behavioural checks run against the module's own logic, imported directly from
 // source through the bundled transform: the functions are pure and dependency
 // free apart from `diff`, so a direct import is faithful.
-const { pairLines, summarizeDiffs, toNativeHunks, isOneSided, nativeDiffText } =
+const { diffNote, missingMessage, pairLines, summarizeDiffs, toNativeHunks, isOneSided, nativeDiffText } =
   await import('../src/client/diff-hunks.ts').catch(async () => {
     // Older node cannot import .ts; fall back to the bundled copy via the
     // client's own module table.
@@ -90,9 +90,30 @@ check('a pure creation is one-sided (native collapses the split view)', () => {
   assert(isOneSided(hunks), 'a creation was not reported one-sided')
 })
 
+check('comparison notes preserve empty creations and deletions', () => {
+  assert(diffNote(edit(null, ''), []) === 'created', 'empty creation was labeled unchanged')
+  assert(diffNote([], [], true) === 'deleted', 'deleted change lost its deleted note')
+  assert(diffNote(edit('same', 'same'), []) === 'unchanged', 'unchanged comparison lost its note')
+  const changed = edit('before', 'after')
+  assert(diffNote(changed, toNativeHunks(changed)) === undefined, 'ordinary edit got a note')
+})
+
 check('a pure deletion is one-sided', () => {
   const hunks = toNativeHunks(edit('a\nb\n', ''), 3)
   assert(isOneSided(hunks), 'a deletion was not reported one-sided')
+})
+
+check('a command-deleted file keeps its own explanation, not the generic one', () => {
+  // "deleted by a command" and "the change cannot be reconstructed" are
+  // different facts; the sidebar body must not report the second for the first.
+  assert(
+    missingMessage(true, 'DELETED_BY_COMMAND', 'GENERIC') === 'DELETED_BY_COMMAND',
+    'a deleted file fell back to the generic unavailable copy',
+  )
+  assert(
+    missingMessage(false, 'DELETED_BY_COMMAND', 'GENERIC') === 'GENERIC',
+    'an unreconstructable change lost its generic copy',
+  )
 })
 
 check('a mixed edit is NOT one-sided (native keeps the split view)', () => {

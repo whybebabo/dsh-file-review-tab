@@ -26,6 +26,8 @@ export interface DiffStats {
     readonly added: number;
     readonly removed: number;
 }
+/** Optional native note shown above a comparison. */
+export type DiffNote = 'created' | 'deleted' | 'unchanged' | undefined;
 /**
  * One comparison in the shape dsh's own FileDiff renders: a header coordinate
  * pair plus `+`/`-`/` ` prefixed lines.
@@ -43,6 +45,19 @@ export declare function isOneSided(hunks: readonly NativeDiffHunk[]): boolean;
 export declare function pairLines(diff: ProducedFileDiff): DiffLine[];
 /** Count added and removed lines using the viewer's exact line-diff algorithm. */
 export declare function summarizeDiffs(diffs: readonly ProducedFileDiff[]): DiffStats;
+/** Derive the comparison note from the recorded change rather than hunk count alone. */
+export declare function diffNote(diffs: readonly ProducedFileDiff[], hunks: readonly NativeDiffHunk[], deleted?: boolean): DiffNote;
+/**
+ * The message a comparison with nothing to draw shows. A file removed by a
+ * command has no content left, which is a different fact from a change whose
+ * two sides could not be reconstructed — so it keeps its own explanation
+ * instead of the generic one.
+ * @param deleted - whether the change removed the file.
+ * @param deletedHint - copy for a command-deleted file.
+ * @param missing - copy for a change that cannot be reconstructed.
+ * @returns the copy to show.
+ */
+export declare function missingMessage(deleted: boolean, deletedHint: string, missing: string): string;
 /**
  * Convert recorded comparisons into dsh's served hunk shape.
  * @param diffs - the recorded before/after snapshots for one file.

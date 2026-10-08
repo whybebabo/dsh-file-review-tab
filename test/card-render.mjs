@@ -118,6 +118,8 @@ const t = (key, params) => {
   const dict = {
     'produced.editedOne': `Edited ${params?.name ?? ''}`,
     'produced.edited': `Edited ${params?.count ?? ''} files`,
+    'produced.deletedOne': 'Deleted 1 file',
+    'produced.deletedAll': `Deleted ${params?.count ?? ''} files`,
     'produced.previewHint': 'Preview in sidebar',
     'produced.viewDiff': `View changes to ${params?.name ?? ''}`,
     'produced.openReview': 'Open changes',
@@ -141,6 +143,12 @@ const t = (key, params) => {
     'review.copied': 'Copied',
     'review.showUnchanged': 'Show',
     'review.hideUnchanged': 'Hide',
+    'diff.created': 'Created in this turn',
+    'diff.deleted': 'Deleted in this turn',
+    'diff.unchanged': 'Unchanged',
+    'diff.truncated': 'Truncated',
+    'diff.loading': 'Loading',
+    'diff.missing': 'Missing',
   }
   return dict[key] ?? key
 }
@@ -217,6 +225,23 @@ check('single file renders no list and no fold', () => {
   // One file is header-only, exactly like the built-in card.
   if (html.includes('<ul')) throw new Error('single-file card rendered a file list')
   if (html.includes('Collapse')) throw new Error('single-file card rendered a fold control')
+})
+
+check('single deleted file keeps its deletion title, badge and preview note', () => {
+  const html = render([{ ...entry('src/gone.ts', []), deleted: true }])
+  for (const needle of ['Deleted 1 file', '>deleted</span>', 'Deleted in this turn']) {
+    if (!html.includes(needle)) throw new Error(`missing ${needle} in ${html.slice(0, 800)}`)
+  }
+  if (html.includes('>+0</span>') || html.includes('>-0</span>')) {
+    throw new Error('deleted-only card still renders meaningless +0/-0 counts')
+  }
+})
+
+check('empty file creation is identified as created in the preview', () => {
+  const path = 'src/empty.ts'
+  const html = render([entry(path, [{ path, oldText: null, newText: '' }])])
+  if (!html.includes('Created in this turn')) throw new Error('empty creation lost its created note')
+  if (html.includes('>Unchanged</p>')) throw new Error('empty creation was labeled unchanged')
 })
 
 const many = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts']
