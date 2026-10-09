@@ -1,12 +1,16 @@
 # dsh-file-review-tab
 
+> **前置依赖**：DeepSeek Harness web（**0.2.0-rc.2+**，已在 0.2.0-rc.2 上真机验证）+ [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)（≥ 0.19.1，已在 0.24.1 上验证）。低版本 DSH 请按 [版本对应](#版本对应) 选择插件版本；**0.7.x 目前只存在于本仓库的 GitHub 源**，npm 与上游 `main` 仍停在 `0.5.0`，安装命令见 [安装](#安装)。
+>
+> **Requirements**: DeepSeek Harness web (**0.2.0-rc.2+**, verified on 0.2.0-rc.2) + [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) (≥ 0.19.1, verified on 0.24.1). Pick the plugin version per [version mapping](#版本对应); **0.7.x exists only in this repo's GitHub source** — npm and upstream `main` are still `0.5.0`. Install commands: [Install](#安装).
+
 把 [dsh-file-review](https://github.com/left0ver/dsh-file-review)（作者 [left0ver](https://github.com/left0ver)）的"改动审查"能力移植为 [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) 的侧边栏 Tab，并保留对话尾部的审查行——两个入口同源，互不干扰。
 
 > Port of [left0ver/dsh-file-review](https://github.com/left0ver/dsh-file-review)'s change-review capability into a [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) sidebar tab, keeping the chat turn-tail review row.
 
-> **镜像说明**：本仓库（[whybebabo/dsh-file-review-tab](https://github.com/whybebabo/dsh-file-review-tab)）是 [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) 的镜像，保留其完整提交历史与插件名 `dsh-file-review-tab`（当前同步至上游 `0.7.0`，未做改名或版本改动），以便直接以 GitHub 源安装。上游若更新，请以 [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) 与 npm 上的 `dsh-file-review-tab` 为准。
+> **镜像说明**：本仓库（[whybebabo/dsh-file-review-tab](https://github.com/whybebabo/dsh-file-review-tab)）镜像自 [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab)，保留其完整提交历史与插件名 `dsh-file-review-tab`（未改名）。注意：上游 `main` 与 npm 最新发布都停在 **`0.5.0`**（面向 DSH 0.1.5），本仓库在其之上还带有 0.6.0 / 0.7.0 的提交（面向 DSH 0.2.0，尚未合并回上游、也未发布 npm）——因此 **`0.7.0` 只能从本仓库的 GitHub 源安装**。上游若更新，请以 [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) 与 npm 为准。
 >
-> **Mirror notice**: this repository ([whybebabo/dsh-file-review-tab](https://github.com/whybebabo/dsh-file-review-tab)) mirrors [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) — same commit history and same plugin name/version (`0.7.0`, no rename or version drift) so it can be installed straight from this GitHub source. Treat the upstream repo and the npm package as canonical.
+> **Mirror notice**: this repository ([whybebabo/dsh-file-review-tab](https://github.com/whybebabo/dsh-file-review-tab)) mirrors [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) with the same commit history and the same plugin name (no rename). Note that upstream `main` and the latest npm release are both still **`0.5.0`** (DSH 0.1.5); this mirror additionally carries the 0.6.0 / 0.7.0 commits (DSH 0.2.0, not yet merged upstream nor published to npm), so **`0.7.0` can only be installed from this GitHub source**. Treat upstream and the npm package as canonical.
 
 ## 功能
 
@@ -24,18 +28,23 @@
 ## 安装
 
 ```sh
-# npm（推荐）
-dsh plugin --profile web add dsh-file-review-tab
+# 0.7.0 的唯一来源：本仓库的 GitHub 源
+dsh plugin --profile web add github:whybebabo/dsh-file-review-tab
 
-# 或 GitHub 源
-dsh plugin --profile web add github:Lzh3070/dsh-file-review-tab
+# 需要旧版（DSH 0.1.5）时才用 npm：npm 上没有 0.6.x / 0.7.x
+dsh plugin --profile web add dsh-file-review-tab@0.5.0
+
+# 不要这样装：Lzh3070/dsh-file-review-tab 的 main 仍是 0.5.0，装不到 0.7.0
+# dsh plugin --profile web add github:Lzh3070/dsh-file-review-tab
 ```
 
-前置依赖：DeepSeek Harness web（**0.2.0-rc.2+**，已在 0.2.0-rc.2 上真机验证）+ [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)（≥ 0.19.1，已在 0.24.1 上验证）。
+`dsh plugin` 会把参数转发给 profile 目录下的 pnpm，所以 `github:owner/repo` 这类 pnpm 支持的源都可用；包名 `dsh-file-review-tab` 会解析到 npm 的 `0.5.0`。
 
-> **版本对应**：`dsh-file-review-tab@0.7.x` 面向 DSH 0.2.0（服务端严格的 `TypertCodec.create()` 工厂 + `conversation.chat.turnTail` 加法列表槽 + 原生同款改动卡片）；`0.6.x` 为同一 DSH 0.2.0 但尾部为自定义卡片；仍停留在 DSH 0.1.5 的用户请继续使用 `dsh-file-review-tab@0.5.x`，0.1.2 / 0.1.1 请用 `0.4.1`。
+装好后**重启 `dsh web`**，在 better-sidebar 侧边栏「+」菜单打开「文件审查」即可。`dsh-better-sidebar` 是前置依赖、不会随本插件自动装上，需另行安装（`dsh plugin --profile web add dsh-better-sidebar`）。
 
-安装后**重启 dsh web**，在 better-sidebar 侧边栏「+」菜单打开「文件审查」即可。
+### 版本对应
+
+`dsh-file-review-tab@0.7.x` 面向 DSH 0.2.0（服务端严格的 `TypertCodec.create()` 工厂 + `conversation.chat.turnTail` 加法列表槽 + 原生同款改动卡片）；`0.6.x` 为同一 DSH 0.2.0 但尾部为自定义卡片；仍停留在 DSH 0.1.5 的用户请继续使用 npm 上的 `dsh-file-review-tab@0.5.x`，0.1.2 / 0.1.1 请用 `0.4.1`。0.6.x / 0.7.x 尚未发布到 npm，只能从本仓库 GitHub 源安装。
 
 ## 致谢
 
@@ -56,7 +65,7 @@ dsh plugin --profile web add github:Lzh3070/dsh-file-review-tab
 - Session-isolated, pause-when-hidden, CSS-Module scoped styling (no conflicts with the chat area or other plugins).
 - Narrow-pane adaptive: in half-width splits and floated free windows the turn header wraps and secondary content yields so undo and file names never clip.
 
-Requires DeepSeek Harness web (0.2.0-rc.2+, verified on 0.2.0-rc.2) and dsh-better-sidebar (≥ 0.19.1, verified on 0.24.1). `dsh-file-review-tab@0.7.x` targets the DSH 0.2.0 client API (strict `TypertCodec.create()`, additive `turnTail` list slot, native-identical changes card); 0.6.x targets the same DSH with a custom card. Users on DSH 0.1.5 should stay on 0.5.x, and 0.1.2 / 0.1.1 on 0.4.1. Restart `dsh web` after installing, then open the "File Review" tab from the sidebar's "+" menu.
+Requires DeepSeek Harness web (0.2.0-rc.2+, verified on 0.2.0-rc.2) and dsh-better-sidebar (≥ 0.19.1, verified on 0.24.1), the latter installed separately. `dsh-file-review-tab@0.7.x` targets the DSH 0.2.0 client API (strict `TypertCodec.create()`, additive `turnTail` list slot, native-identical changes card); 0.6.x targets the same DSH with a custom card. Neither 0.6.x nor 0.7.x is on npm — install them only from this repo's GitHub source (`dsh plugin --profile web add github:whybebabo/dsh-file-review-tab`); npm's latest is 0.5.0 for DSH 0.1.5, and 0.1.2 / 0.1.1 should use 0.4.1. Restart `dsh web` after installing, then open the "File Review" tab from the sidebar's "+" menu.
 
 ## Development
 
