@@ -277,6 +277,15 @@ check('the creation note is never inferred from a null old side', () => {
   if (!/created\s*===\s*true/.test(body)) {
     throw new Error('diffNote does not read the explicit created flag')
   }
+  // Creation is a file-level fact: one flagged hunk must carry it for the whole
+  // file. The `every` form dropped the note whenever a created file was edited
+  // again in the same turn, because only the first hunk carries the flag.
+  if (/\.every\(/.test(body)) {
+    throw new Error('diffNote requires EVERY hunk to be flagged, losing a file-level creation')
+  }
+  if (!/\.some\(/.test(body)) {
+    throw new Error('diffNote does not test for any authoritative creation record')
+  }
 })
 
 check('only authoritative sources set the creation flag', () => {
@@ -292,6 +301,13 @@ check('only authoritative sources set the creation flag', () => {
   if (recordedBody === null) throw new Error('no diffsFromBeforeAfter in the bundle')
   if (!/before === null/.test(recordedBody) || !/created: true/.test(recordedBody)) {
     throw new Error('the recorded before === null creation is not flagged')
+  }
+  // A recorded `before === null` means the path did not exist, so even an empty
+  // `after` is a creation. Discarding it (`after === '' ? []`) hid the file from
+  // review entirely and disagreed with the model-direct twin. The bundle prints
+  // string literals double-quoted, so match either quote style.
+  if (/after\s*===\s*['"]{2}\s*\?\s*\[\]/.test(recordedBody)) {
+    throw new Error('diffsFromBeforeAfter still discards an empty creation')
   }
   // And the synthesized call-intent hunks must stay unflagged, except in the
   // `create` branch, whose command name IS the provenance.

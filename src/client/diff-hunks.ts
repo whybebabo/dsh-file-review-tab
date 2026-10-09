@@ -108,6 +108,13 @@ export function summarizeDiffs(diffs: readonly ProducedFileDiff[]): DiffStats {
  * `meta.diffs` for a `write` overwrite, a `str_replace_editor insert` or an
  * `edit` with an empty `old_string` — all edits to files that already existed.
  * Inferring creation from null labeled those "created in this turn".
+ *
+ * Creation is a FILE-level fact, so ANY authoritative creation record for the
+ * path carries it. `diffs` holds one file's hunks in settlement order, and a
+ * file created and then edited in the same turn keeps its creation hunk
+ * alongside the later ordinary ones; requiring `every` hunk to be flagged lost
+ * the note precisely there. Only the explicitly flagged hunks count, so a
+ * file whose prior content is merely unknown stays unlabeled.
  */
 export function diffNote(
   diffs: readonly ProducedFileDiff[],
@@ -115,7 +122,7 @@ export function diffNote(
   deleted = false,
 ): DiffNote {
   if (deleted) return 'deleted'
-  if (diffs.length > 0 && diffs.every(diff => diff.created === true)) return 'created'
+  if (diffs.some(diff => diff.created === true)) return 'created'
   return hunks.length === 0 ? 'unchanged' : undefined
 }
 

@@ -34,7 +34,9 @@ function trailingContext(hunk: Hunk): number {
 /**
  * Line-level hunks for one file mutation, or a single whole-file entry when the
  * file was created (`before === null`, mirroring the write tool's null-content
- * card). Returns [] when the mutation did not change the file.
+ * card). Returns [] only when an existing file's content is unchanged: a
+ * `before === null` mutation always changed the filesystem, even when `after`
+ * is empty, because the file came into existence.
  */
 export function diffsFromBeforeAfter(
   path: string,
@@ -42,7 +44,12 @@ export function diffsFromBeforeAfter(
   after: string,
 ): readonly ProducedFileDiff[] {
   if (before === null) {
-    return after === '' ? [] : [{ path, oldText: null, newText: after, created: true }]
+    // An empty `after` is still a creation, not a no-op: the path exists now.
+    // Dropping it would hide the file from review entirely, and would disagree
+    // with the model-direct twin (`str_replace_editor create` with no
+    // `file_text`), which reports this exact shape. The empty pair draws no
+    // hunks, so the creation note is what identifies it.
+    return [{ path, oldText: null, newText: after, created: true }]
   }
   const oldLines = diffContentLines(before)
   const newLines = diffContentLines(after)

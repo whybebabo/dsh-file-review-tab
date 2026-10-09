@@ -101,6 +101,23 @@ check('comparison notes preserve empty creations and deletions', () => {
   assert(diffNote(changed, toNativeHunks(changed)) === undefined, 'ordinary edit got a note')
 })
 
+check('a creation note survives an unflagged hunk later in the same file', () => {
+  // Creation is a FILE-level fact, so one authoritative creation record carries
+  // it for the whole file. The failing shape was a turn that created a file and
+  // then edited it: only the first hunk is flagged, so `every()` returned false
+  // and the "created in this turn" note disappeared even though it was true.
+  const created = { path: 'a.ts', oldText: null, newText: 'a\n', created: true }
+  const later = { path: 'a.ts', oldText: 'a', newText: 'b', oldStart: 1, newStart: 1 }
+  assert(diffNote([created, later], toNativeHunks([created, later])) === 'created',
+    'a later edit cleared the creation note')
+  // Order must not matter (hunks arrive in settlement order, but the fact does
+  // not depend on it), and an unflagged-only list must stay unlabeled.
+  assert(diffNote([later, created], toNativeHunks([later, created])) === 'created',
+    'the creation note depended on hunk order')
+  assert(diffNote([later], toNativeHunks([later])) === undefined,
+    'a list without any creation record was labeled created')
+})
+
 check('a null old side alone never means "created"', () => {
   // The regression this guards: inferring the creation note from
   // `oldText === null`. Null also means "the prior content is unavailable", and
@@ -171,7 +188,9 @@ check('multiple distant edits split into separate hunks', () => {
 // The provenance rule, exercised end to end through the modules that actually
 // produce these diffs — a unit test on diffNote alone would not catch a wrong
 // flag at the source, which is where the bug lived.
-const { deriveSessionChanges } = await import('../src/client/session-changes.ts').catch(() => ({}))
+const { deriveSessionChanges, mergeRecordedTurns } =
+  await import('../src/client/session-changes.ts').catch(() => ({}))
+const { diffsFromBeforeAfter } = await import('../src/client/recorded-diffs.ts').catch(() => ({}))
 if (deriveSessionChanges !== undefined) {
   /** A settled tool-result node carrying NO meta.diffs (the fallback path). */
   const node = (name, args, meta = {}) => ({
@@ -220,6 +239,78 @@ if (deriveSessionChanges !== undefined) {
     assert(result.note === 'created', `a wire creation lost its note (${result.note})`)
     assert(result.diffs.every(diff => diff.created === true), 'the wire creation did not set the flag')
   })
+
+  // Code Mode (`run_code`) mutations reach review through the Host recorder's
+  // full before/after pair, not the wire views. Both checks below drive that
+  // path, because that is where the two reported gaps lived.
+  if (diffsFromBeforeAfter !== undefined && mergeRecordedTurns !== undefined) {
+    const recordedRoot = { turn: 1, live: false, rootCallId: 'root-1' }
+    /** Merge recorded Code Mode mutations for one turn. */
+    const mergeRecorded = (mutations) =>
+      mergeRecordedTurns([], [recordedRoot], mutations).flatMap(turn => turn.files)
+    /** The single merged file, with its note, or a loud failure. */
+    const recordedFile = (mutations) => {
+      const files = mergeRecorded(mutations)
+      assert(files.length === 1, `expected 1 file, got ${files.length}`)
+      return { ...files[0], note: diffNote(files[0].diffs, toNativeHunks(files[0].diffs, 3)) }
+    }
+
+    check('a Code Mode creation of an empty file is not discarded', () => {
+      // `before === null` is a recorded fact: the path did not exist. An empty
+      // `after` therefore still created the file, and returning [] here made
+      // mergeRecordedTurns skip the mutation entirely — the file never appeared
+      // in review. The model-direct twin (`str_replace_editor create` with no
+      // file_text) reports this exact shape, so both must agree.
+      const file = recordedFile([
+        { rootCallId: 'root-1', name: 'write', path: 'empty.ts', before: null, after: '' },
+      ])
+      assert(file.diffs.length === 1, `empty creation produced ${file.diffs.length} diffs`)
+      assert(file.diffs[0].created === true, 'the empty creation did not set the creation flag')
+      assert(file.diffs[0].oldText === null, 'the empty creation lost its null old side')
+      assert(file.diffs[0].newText === '', 'the empty creation gained content')
+      assert(file.note === 'created', `empty creation was noted ${file.note}, not created`)
+      // The empty pair draws no lines; the note is what identifies the file.
+      assert(toNativeHunks(file.diffs, 3).length === 0, 'an empty creation drew hunks')
+    })
+
+    check('creation survives a later edit to the same file in one turn', () => {
+      // Creation is a file-level fact. The first mutation records it; the
+      // second is an ordinary edit whose hunk carries no flag. Requiring EVERY
+      // hunk to be flagged dropped the note precisely here, even though the
+      // file was still created in this turn.
+      const file = recordedFile([
+        { rootCallId: 'root-1', name: 'write', path: 'new.ts', before: null, after: 'a\n' },
+        { rootCallId: 'root-1', name: 'edit', path: 'new.ts', before: 'a\n', after: 'b\n' },
+      ])
+      assert(file.diffs.length === 2, `expected both hunks, got ${file.diffs.length}`)
+      assert(file.diffs[0].created === true, 'the creation hunk lost its flag')
+      assert(file.diffs[1].created !== true, 'the ordinary edit was flagged as a creation')
+      assert(file.note === 'created', `create-then-edit was noted ${file.note}, not created`)
+      // And the reverse order must NOT invent a creation for a pre-existing file.
+      const edited = recordedFile([
+        { rootCallId: 'root-1', name: 'write', path: 'old.ts', before: 'a\n', after: 'b\n' },
+        { rootCallId: 'root-1', name: 'edit', path: 'old.ts', before: 'b\n', after: 'c\n' },
+      ])
+      assert(edited.note !== 'created', `an existing file was labeled ${edited.note}`)
+    })
+
+    check('an unchanged recorded mutation still contributes nothing', () => {
+      // The empty-creation fix must not turn a genuine no-op into a review row:
+      // identical before/after changes nothing on disk.
+      assert(
+        diffsFromBeforeAfter('same.ts', 'a\n', 'a\n').length === 0,
+        'an unchanged existing file produced a diff',
+      )
+      assert(
+        diffsFromBeforeAfter('same.ts', '', '').length === 0,
+        'an unchanged empty existing file produced a diff',
+      )
+      const files = mergeRecorded([
+        { rootCallId: 'root-1', name: 'write', path: 'same.ts', before: 'a\n', after: 'a\n' },
+      ])
+      assert(files.length === 0, `an unchanged mutation produced ${files.length} files`)
+    })
+  }
 }
 
 console.log(failures === 0 ? '\nALL DIFF CORE CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
