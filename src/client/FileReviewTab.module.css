@@ -183,24 +183,26 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* Flat notice: a hairline outline on the layer surface, with the tone carried
+   by ink alone — no tinted fill, matching the app's quiet inline states. */
 .notice {
   flex: none;
   margin: 8px 10px 0;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-sm);
   font-size: 12px;
 }
 
 .noticeSuccess {
   color: var(--dsw-alias-state-success-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-success-primary) 35%, transparent);
+  background: var(--dsw-alias-bg-layer-1);
+  border: .5px solid var(--dsw-alias-border-l2);
 }
 
 .noticeError {
   color: var(--dsw-alias-state-error-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, transparent);
+  background: var(--dsw-alias-bg-layer-1);
+  border: .5px solid var(--dsw-alias-border-l2);
 }
 
 .body {
@@ -216,12 +218,22 @@
   text-align: center;
 }
 
+/* Flat turn group: the native ChangedFiles card shape (hairline stroke, one
+   surface fill, no shadow) instead of a nested bordered box on a code-block
+   grey. `--changes-fill` is native's own card-header fill; the interactive
+   controls inside it keep the standard `interactive-bg-hover` token every
+   native tool/row/pill uses, rather than a custom tint. */
 .turnGroup {
-  margin: 0 8px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  --changes-fill: var(--dsw-static-neutral-50);
+  margin: 0 8px 8px;
   overflow: hidden;
-  background: var(--dsw-alias-markdown-code-block);
+  border: .5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+:global(body[data-ds-dark-theme]) .turnGroup {
+  --changes-fill: var(--dsw-static-neutral-850);
 }
 
 .turnHeader {
@@ -234,20 +246,22 @@
   row-gap: 4px;
   min-height: 34px;
   padding: 0 8px 0 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--changes-fill);
 }
 
+/* Native's card title weight (ChangedFiles.title: 13px/500), not a heavier
+   custom emphasis. */
 .turnTitle {
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .liveBadge {
-  padding: 1px 6px;
+  padding: 0 6px;
   border-radius: 999px;
   font-size: 11px;
+  line-height: 18px;
   color: var(--dsw-alias-state-warning-primary, #d9a13b);
-  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #d9a13b) 14%, transparent);
   white-space: nowrap;
 }
 
@@ -305,14 +319,21 @@
   stroke-linejoin: round;
 }
 
+/* Native list grammar (ChangedFiles.list): a single hairline separates the
+   header from the rows; rows abut so the hover fill spans the whole row. */
 .fileList {
   margin: 0;
   padding: 0;
+  border-top: .5px solid var(--dsw-alias-border-l2);
   list-style: none;
 }
 
 .fileItem {
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: .5px solid var(--dsw-alias-border-l1);
+}
+
+.fileItem:first-child {
+  border-top: 0;
 }
 
 .fileRow {
@@ -356,36 +377,37 @@
   white-space: nowrap;
 }
 
+/* Native's chip grammar (StatsPills.pill): a transparent 999px pill whose only
+   signal is ink colour. A filled badge is a different, heavier vocabulary the
+   app does not use for state, so each tone below is carried by its ink alone. */
 .stateBadge {
   flex: none;
-  padding: 1px 6px;
+  padding: 0 6px;
   border-radius: 999px;
   font-size: 11px;
+  line-height: 18px;
   white-space: nowrap;
 }
 
 .badgeUndone {
   color: var(--dsw-alias-label-tertiary);
-  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .badgeMuted {
   color: var(--dsw-alias-label-tertiary);
-  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .badgeError {
   color: var(--dsw-alias-state-error-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
 }
 
 .deletedBadge {
   flex: none;
-  padding: 1px 6px;
+  padding: 0 6px;
   border-radius: 999px;
   font-size: 11px;
+  line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
   white-space: nowrap;
 }
 
@@ -418,7 +440,7 @@
 }
 
 .diffWrap {
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: .5px solid var(--dsw-alias-border-l1);
   /* The comparison clips its own long lines, so the wrapper must not also
      scroll horizontally or the two fight. */
   overflow: hidden;
@@ -467,8 +489,8 @@
   width: 100%;
   margin-top: 6px;
   padding: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border: .5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
   background: 0 0;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;

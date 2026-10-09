@@ -185,6 +185,71 @@ check('the comparison carries the native FileDiff declarations verbatim', () => 
   if (missing.length > 0) throw new Error(`missing native declarations: ${missing.join(' | ')}`)
 })
 
+check('the review tab body keeps the native flat card vocabulary', () => {
+  // The tab's per-turn groups are the plugin's own surface (native's review tab
+  // has no session-level body), so they are the one place a heavy bespoke look
+  // can creep in: a filled code-block grey, a 1px border, a pill with a tinted
+  // background, a 600-weight title. None of those exist in dsh's own chrome —
+  // its cards are a hairline stroke on one layer fill and its chips carry tone
+  // by ink alone. These are the exact declarations that keep the two the same,
+  // and a drift here is invisible to typecheck and to a render test.
+  //
+  // The CSS text lives in the emitted style elements, whose class hashes change
+  // every build; match on the stable `_<local>` suffix instead of the hash.
+  const css = [...source.matchAll(/"(?:[^"\\]|\\.)*"/g)]
+    .map(m => { try { return JSON.parse(m[0]) } catch { return '' } })
+    .filter(text => text.length > 300 && text.includes('{') && text.includes('}'))
+    .join('\n')
+  if (css.length === 0) throw new Error('no CSS payload found in the bundle')
+  const rule = (local) => {
+    const found = new RegExp(`\\.[\\w$]+_${local}\\{([^}]*)\\}`).exec(css)
+    if (found === null) throw new Error(`no .${local} rule in the bundle CSS`)
+    return found[1]
+  }
+  const want = [
+    // the native card shape: .5px stroke, the radius token, one layer fill
+    ['turnGroup', 'border:.5px solid var(--dsw-alias-border-l2)'],
+    ['turnGroup', 'border-radius:var(--dsw-radius-lg)'],
+    ['turnGroup', 'background:var(--dsw-alias-bg-layer-1)'],
+    // native's own card-header fill pair, remapped for the dark theme
+    ['turnGroup', '--changes-fill:var(--dsw-static-neutral-50)'],
+    ['turnHeader', 'background:var(--changes-fill)'],
+    // native's faint inter-row hairline, and the list's own top rule
+    ['fileItem', 'border-top:.5px solid var(--dsw-alias-border-l1)'],
+    ['fileList', 'border-top:.5px solid var(--dsw-alias-border-l2)'],
+    // native's chip grammar: a 999px pill with no fill of its own
+    ['stateBadge', 'border-radius:999px'],
+    // the native card title weight, not a heavier custom emphasis
+    ['turnTitle', 'font-weight:500'],
+  ]
+  for (const [local, declaration] of want) {
+    if (!rule(local).includes(declaration)) {
+      throw new Error(`.${local} is missing \`${declaration}\`: ${rule(local)}`)
+    }
+  }
+  // And the heavy vocabulary must be gone from these surfaces.
+  const heavy = [
+    ['turnGroup', '--dsw-alias-markdown-code-block'],
+    ['turnGroup', 'border:1px'],
+    ['turnTitle', 'font-weight:600'],
+  ]
+  for (const [local, declaration] of heavy) {
+    if (rule(local).includes(declaration)) {
+      throw new Error(`.${local} still carries the heavy value \`${declaration}\``)
+    }
+  }
+  // A tone chip must not reintroduce a tinted fill.
+  for (const local of ['badgeError', 'liveBadge']) {
+    if (/background:/.test(rule(local))) {
+      throw new Error(`.${local} has a tinted fill; native chips carry tone by ink`)
+    }
+  }
+  // The dark theme must remap the header fill inside the card scope.
+  if (!/body\[data-ds-dark-theme\]\s*\.[\w$]+_turnGroup\{[^}]*--changes-fill:var\(--dsw-static-neutral-850\)/.test(css)) {
+    throw new Error('the dark theme does not remap the card header fill')
+  }
+})
+
 check('the refresh tool drives its pending state from both async sources', () => {
   // The CSS above is inert unless the button actually emits the attribute. That
   // cannot be observed by rendering: the pending flags start false and no effect
