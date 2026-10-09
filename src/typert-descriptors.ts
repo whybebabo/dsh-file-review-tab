@@ -38,6 +38,10 @@ const diffSchema = z.object({
   newText: z.string(),
   oldStart: z.number().int().min(1).optional(),
   newStart: z.number().int().min(1).optional(),
+  /** Coordinate space, so hunks from several settlements stay separable. */
+  mutation: z.number().int().min(0).optional(),
+  /** Event sequence, so settlements merge in the order they happened. */
+  seq: z.number().int().min(0).optional(),
 })
 
 const requestSchema = z.object({

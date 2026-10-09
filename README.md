@@ -115,16 +115,21 @@ Requires DeepSeek Harness web (0.2.0-rc.2+, verified on 0.2.0-rc.2) and dsh-bett
 pnpm install
 pnpm typecheck   # tsc --noEmit
 pnpm build       # emits lib/ (host ESM + browser bundle + .d.ts)
-pnpm test        # runtime checks; run after build
+pnpm test        # runtime checks; rebuilds lib/ first via pretest
 ```
 
-`pnpm test` drives the built artifacts through the real DSH 0.2.0 registries rather than mocking them, so a breaking upstream API change fails here instead of in the UI. All nine checks assert behavior no typecheck can see:
+`pnpm test` drives the built artifacts through the real DSH 0.2.0 registries rather than mocking them, so a breaking upstream API change fails here instead of in the UI. Several checks read `lib/`, so `test` runs `build` first as a `pretest` step: without it a `src/` edit could pass every check against the previous build. All fourteen checks assert behavior no typecheck can see:
 
 - `test/typert-descriptors.mjs` — registers the Host Typert contribution against the real registry and round-trips every codec (plus a control proving the pre-0.2.0 `schema:` codec shape is rejected).
 - `test/slot-registration.mjs` — registers the turn-tail entry against the real `SlotCore` (a list slot requires an `id`).
 - `test/host-apply.mjs` — runs the host half's `apply()` on a real cordis `Context` and drives the `tools/post-execute` recorder plus the `fileReview` Remote service.
+- `test/undo-redo.mjs` — drives the real `fileReview` service against a temp workspace and asserts an exact undo→redo round trip for multi-hunk and multi-mutation files, including a payload whose settlements arrive in the wrong array order.
+- `test/interleaved-mutations.mjs` — a turn whose changes arrive through BOTH channels (a `run_code` mutation recorded by the Host, plus a model-direct `edit`) stays in event order, so undo and redo both still round-trip; a deletion and a later recreation resolve by event order too (a recreated file is not left marked deleted); and the `recorded` fetch re-arm signal plus its throttle pacing are verified.
 - `test/review-invalidation.mjs` — session-scoped review-state invalidation and disposer behavior.
+- `test/deep-link.mjs` — resolves a chat→sidebar deep link, including into a turn hidden behind the auto-archive section.
 - `test/diff-hunks.mjs` — the shared diff core (`toNativeHunks`) invariants: numbering, sign prefixes, context trimming.
+- `test/mutation-order.mjs` — the per-settlement coordinate model that keeps multi-mutation hunks applicable, plus the event-sequence ordering that interleaves the two change channels.
+- `test/deleted-paths.mjs` — `rm`-family option parsing never reports an option or an option's value as a deleted path, and a quoted comma inside a filename is not split into two paths.
 - `test/client-bundle.mjs` — evaluates `lib/client.js` the way the Web plugin loader does and checks the `dsh.client` contract (`apply` export + `inject` list).
 - `test/card-render.mjs` / `test/tab-render.mjs` — actually MOUNT the turn-tail card and the sidebar tab with `react-dom/server`, asserting the native structure and that no button nests inside another.
 - `test/diff-render.mjs` — renders the comparison body (unified/split/wrap, hunk banners, per-side line numbers, creation/deletion/empty status lines).

@@ -6,6 +6,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { hunksForApply, mutationGroups, orderBySequence } from './mutation-order.ts'
 import type {
   FileReviewAction, FileReviewChange, FileReviewFileResult, FileReviewRequest, FileReviewResult,
   ProducedFileDiff, RecordedMutation, RecordedRequest, RecordedResult,
@@ -114,20 +115,37 @@ export function transformFile(
   if (file.diffs.length === 0 || !file.diffs.every(diff => hunkSupported(diff, file.path))) {
     return null
   }
-  const diffs = action === 'undo' ? [...file.diffs].reverse() : file.diffs
+  // Hunks from different settlements are anchored in different texts, so the
+  // group order follows settlement order backward for undo and forward for
+  // redo; inside one settlement every hunk shares one coordinate space and must
+  // run back-to-front, or a hunk that changes the line count shifts the anchors
+  // of the hunks still waiting behind it (which made multi-hunk redo fail).
+  //
+  // The groups are ordered by their recorded event `seq` first: the two
+  // producers of these hunks (conversation snapshot, Host recorder) are merged
+  // asynchronously, so the incoming array order is a merge artifact and can
+  // invert a `run_code` edit and a model-direct edit to the same file. When the
+  // sequences are not all present the incoming order stands.
+  const groups = orderBySequence(mutationGroups(file.diffs).map(group => ({
+    seq: group[0]?.seq,
+    diffs: group,
+  }))).map(settlement => settlement.diffs)
+  const ordered = action === 'undo' ? [...groups].reverse() : groups
   let next = text
-  for (const diff of diffs) {
-    const source = action === 'undo' ? diff.newText : diff.oldText
-    const replacement = action === 'undo' ? diff.oldText : diff.newText
-    if (source === null || replacement === null) return null
-    const changed = replaceHunk(
-      next,
-      source,
-      replacement,
-      action === 'undo' ? diff.newStart : diff.oldStart,
-    )
-    if (changed === null) return null
-    next = changed
+  for (const group of ordered) {
+    for (const diff of hunksForApply(group, action)) {
+      const source = action === 'undo' ? diff.newText : diff.oldText
+      const replacement = action === 'undo' ? diff.oldText : diff.newText
+      if (source === null || replacement === null) return null
+      const changed = replaceHunk(
+        next,
+        source,
+        replacement,
+        action === 'undo' ? diff.newStart : diff.oldStart,
+      )
+      if (changed === null) return null
+      next = changed
+    }
   }
   return next
 }

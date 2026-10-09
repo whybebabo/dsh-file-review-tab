@@ -21,7 +21,7 @@ import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ProducedFileDiff, ProducedFileReview } from '../change-types.ts'
 import { appliedDiffs, callIntent } from './mutation-call.ts'
-
+import { appendMutation } from '../mutation-order.ts'
 export type { ProducedFileDiff, ProducedFileReview } from '../change-types.ts'
 
 interface ProducedPath {
@@ -86,15 +86,17 @@ export function reviewsForClosing(
     if (produced.seq > seq) continue
     const review = byPath.get(produced.path)
     if (review === undefined) {
+      const diffs: ProducedFileDiff[] = []
+      appendMutation(diffs, produced.diffs, produced.seq)
       const created = {
         path: produced.path,
-        diffs: [...produced.diffs],
+        diffs,
         ...(produced.deleted === true ? { deleted: true as const } : {}),
       }
       byPath.set(produced.path, created)
       reviews.push(created)
     } else {
-      review.diffs.push(...produced.diffs)
+      appendMutation(review.diffs, produced.diffs, produced.seq)
       // Last state wins: a deletion marks the entry, a later write (the file
       // was recreated in the same turn) clears it again.
       if (produced.deleted === true) review.deleted = true

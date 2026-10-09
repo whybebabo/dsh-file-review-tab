@@ -44,10 +44,12 @@ import {
   type SessionFileChange, type TurnFileChanges,
 } from './session-changes.ts'
 import { diffNote, missingMessage, summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
+import { recordedFetchDelay } from './recorded-fetch.ts'
 import { NativeDiff, type NativeDiffLabels } from './NativeDiff.tsx'
 import { t } from './locales.ts'
 import {
   currentFileReviewSeed,
+  planDeepLink,
   publishFileReviewInvalidation,
   subscribeFileReviewInvalidation,
   subscribeFileReviewSeed,
@@ -280,11 +282,16 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     [snapshot],
   )
   const rootsKey = useMemo(
-    () => roots.map(root => root.rootCallId).join('|'),
+    () => roots.map(root => `${root.rootCallId}:${root.progress}`).join('|'),
     [roots],
   )
   const [recorded, setRecorded] = useState<readonly RecordedMutation[]>(() => [])
   const [recordedPending, setRecordedPending] = useState(false)
+  // Pacing anchor for the `recorded` fetch: the last completed fetch, or — when
+  // none has completed yet — the moment the fetch was first armed. Anchoring on
+  // a real instant that an incoming update cannot reset is what keeps a rapidly
+  // settling root from starving its first fetch (see `recordedFetchDelay`).
+  const recordedFetchAnchorRef = useRef<number | null>(null)
   useEffect(() => {
     // Clear on the early return too: without this, leaving the tab while a fetch
     // is in flight would strand `recordedPending` at true and the refresh tool
@@ -292,6 +299,8 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     if (!visible || roots.length === 0) { setRecordedPending(false); return }
     let active = true
     setRecordedPending(true)
+    const now = Date.now()
+    if (recordedFetchAnchorRef.current === null) recordedFetchAnchorRef.current = now
     const timer = window.setTimeout(() => {
       const scope = sessions.scope(sessionId as SessionId)
       const remote = scope?.get('remote.fileReview') as FileReviewRemote | undefined
@@ -310,13 +319,22 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
           // snapshot, focus or review action retries.
         })
         .finally(() => {
+          // Advance the anchor on completion, whatever the outcome: a failed
+          // fetch must not spin, and the next update retries after the interval.
+          recordedFetchAnchorRef.current = Date.now()
           if (active) setRecordedPending(false)
         })
-    }, 200)
+    }, recordedFetchDelay(recordedFetchAnchorRef.current, now))
     return () => {
       active = false
       window.clearTimeout(timer)
     }
+    // `rootsKey` carries each root's SETTLED nested-dispatch count, so it moves
+    // exactly when the Host recorder gains a mutation — which is what makes a
+    // long-running `run_code` (whose `rootCallId` never changes) refetch. That
+    // is a more precise signal than the raw snapshot identity: a live root
+    // publishes snapshot updates on every token flush, which would re-arm this
+    // effect far more often than the recorder can actually have gained data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, rootsKey, statusVersion, sessions, sessionId])
 
@@ -402,8 +420,6 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   //     gating on `flat` would offer a button whose click does no work at all.
   const canRefresh = roots.length > 0 || inspectable.length > 0
   const refreshing = recordedPending || statusPending
-  const flatRef = useRef(flat)
-  flatRef.current = flat
   const turnsRef = useRef(turns)
   turnsRef.current = turns
   const archivedTurnsRef = useRef(archivedTurns)
@@ -458,39 +474,31 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   // queues a scroll that lands the link's target at the top of the tab body.
   const replayLink = useCallback((paths: readonly string[], targetTurn: number | undefined) => {
     if (paths.length === 0) return
-    // A link into an auto-archived turn must first make that turn render:
-    // open the archive section and page to the owning group. The rows then
-    // mount, flatKey re-arms, and the pending scroll below lands on them.
-    const ownerTurn = targetTurn !== undefined
-      ? turnsRef.current.find(turn => turn.turn === targetTurn)
-      : turnsRef.current.find(turn => turn.files.some(file => paths.includes(file.path)))
-    if (ownerTurn !== undefined && ownerTurn.live !== true) {
-      const archivedIndex = archivedTurnsRef.current.findIndex(turn => turn.turn === ownerTurn.turn)
-      if (archivedIndex !== -1) {
-        setArchiveOpen(true)
-        setArchivePages((current) =>
-          Math.max(current, Math.ceil((archivedIndex + 1) / ARCHIVE_PAGE_TURNS)))
-      }
+    const plan = planDeepLink(
+      turnsRef.current,
+      archivedTurnsRef.current,
+      paths,
+      targetTurn,
+    )
+    // A link into an auto-archived turn must first make that turn render: open
+    // the archive section and page to the owning group. The rows then mount,
+    // flatKey re-arms, and the pending scroll lands on them.
+    if (plan.archive !== null) {
+      setArchiveOpen(true)
+      setArchivePages((current) => Math.max(current, plan.archive!.pages))
     }
-    // With a turn anchor only THAT turn's rows expand — a path that recurs in
-    // other turns stays collapsed there; without one, every occurrence expands
-    // (legacy meta shape).
-    const matches = (item: FlatChange): boolean =>
-      paths.includes(item.path) && (targetTurn === undefined || item.turn === targetTurn)
+    // Merges into the user's own expanded set, never replacing it.
     setExpanded((current) => {
       const next = new Set(current)
-      for (const item of flatRef.current) {
-        if (matches(item)) next.add(stateKey(item.turn, item.path))
-      }
+      for (const key of plan.expanded) next.add(key)
       return next
     })
-    const first = flatRef.current.find(item => matches(item))
-    // Multi-path links (the 审查 button) target the turn group so the whole
-    // review leads the viewport; single-path links (a file chip) target that
-    // file's row. An unmatched link leaves nothing pending.
-    pendingScrollRef.current = first === undefined ? null : {
-      rowKey: stateKey(first.turn, first.path),
-      turn: paths.length > 1 ? first.turn : null,
+    // The target stays armed until its element mounts: the scroll effect below
+    // early-returns while the ref is missing and re-runs on `flatKey`, which the
+    // archive page landing changes. A link that matches nothing stays null.
+    pendingScrollRef.current = plan.first === null ? null : {
+      rowKey: stateKey(plan.first.turn, plan.first.path),
+      turn: paths.length > 1 ? plan.first.turn : null,
     }
   }, [])
 

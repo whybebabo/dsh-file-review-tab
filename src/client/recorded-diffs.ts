@@ -69,7 +69,15 @@ export function diffsFromBeforeAfter(
     if (!change.removed && !change.added) {
       const run = change.value
       if (hunk !== null) {
-        const beforeLen = hunk.old.length
+        // Each side is trimmed against ITS OWN length, never a shared index:
+        // the change run that opened this hunk may have added or removed
+        // lines, so the two sides are generally different lengths already.
+        // Clamping both to `old.length + CONTEXT_LINES` sliced too little off
+        // the longer side, leaving a hunk whose line-count delta disagreed
+        // with the change it described — a hunk that looked perfectly
+        // reversible and corrupted the file on undo.
+        const oldKept = hunk.old.length + CONTEXT_LINES
+        const newKept = hunk.new.length + CONTEXT_LINES
         hunk.old.push(...run)
         hunk.new.push(...run)
         oldCursor += run.length
@@ -79,9 +87,8 @@ export function diffsFromBeforeAfter(
         // the span's LAST CONTEXT_LINES as the next hunk's leading context —
         // both tails stay contiguous with their own change runs.
         if (run.length > CONTEXT_LINES * 2) {
-          const target = beforeLen + CONTEXT_LINES
-          hunk.old.length = target
-          hunk.new.length = target
+          hunk.old.length = oldKept
+          hunk.new.length = newKept
           contextBuffer = run.slice(-CONTEXT_LINES)
           hunk = null
         }

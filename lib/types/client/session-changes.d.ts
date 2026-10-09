@@ -19,6 +19,13 @@ export interface SessionFileChange {
     readonly diffs: readonly ProducedFileDiff[];
     /** Terminal commands deleted this path in this turn (display-only). */
     readonly deleted?: true;
+    /**
+     * Event sequence the pending deletion happened at. A deletion is an event, so
+     * a cross-channel write with a LATER sequence proves the path was recreated
+     * and clears the flag. Absent when the snapshot omitted the sequence, in which
+     * case the deletion is kept (the conservative reading).
+     */
+    readonly deletedSeq?: number | undefined;
 }
 /** One turn's produced files, in first-seen order. */
 export interface TurnFileChanges {
@@ -40,17 +47,44 @@ export interface SessionRoot {
     readonly turn: number;
     readonly live: boolean;
     readonly rootCallId: string;
+    /**
+     * The root node's event sequence, or undefined when the snapshot omitted it.
+     * A recorded mutation is a nested dispatch of this root, so this is the
+     * sequence its changes are ordered by — it is what lets a `run_code` edit be
+     * merged into the right position among the turn's model-direct edits. When it
+     * is unknown the merge keeps array order rather than guessing.
+     */
+    readonly seq: number | undefined;
+    /**
+     * How many nested dispatches of this root have SETTLED so far.
+     *
+     * The Host recorder keeps appending mutations under the SAME `rootCallId`
+     * while a long `run_code` runs, so a call-id-only dependency would never
+     * re-arm the client's `recorded` fetch: the tab would show only the mutations
+     * that landed before its first fetch. A nested dispatch settles exactly when
+     * the recorder sees it, so this count grows with the recorded data and gives
+     * the fetch a dependency that tracks it.
+     */
+    readonly progress: number;
 }
 /** Every `run_code` tool-result node whose nested changes are not in the snapshot. */
 export declare function deriveSessionRoots(snapshot: ConversationSnapshot): SessionRoot[];
 /**
  * Merge Host-recorded Code Mode mutations into the snapshot-derived turns:
- * hunks rebuilt from the full before/after are appended to the owning turn's
- * file groups (same-path entries stay one row, hunks appended in dispatch
- * order), so the tab's diff rendering, status inspection and undo all work on
- * programmatic edits exactly like model-direct ones. All inputs are immutable;
- * the result is a fresh array only when a recorded mutation matched a visible
- * root.
+ * hunks rebuilt from the full before/after are inserted into the owning turn's
+ * file groups at the position their EVENT SEQUENCE puts them (same-path entries
+ * stay one row), so the tab's diff rendering, status inspection and undo all
+ * work on programmatic edits exactly like model-direct ones.
+ *
+ * Ordering is by sequence rather than "snapshot first, recorded after": the two
+ * sources are separate channels merged asynchronously, so appending recorded
+ * mutations could invert them. A `run_code` insert at the top of a file followed
+ * by a model-direct edit near its end must replay in that order — reversed, the
+ * rear edit's line anchors describe text the front insert already shifted, and
+ * BOTH undo and redo fail on a file that was perfectly reviewable.
+ *
+ * All inputs are immutable; the result is a fresh array only when a recorded
+ * mutation matched a visible root.
  */
 export declare function mergeRecordedTurns(turns: readonly TurnFileChanges[], roots: readonly SessionRoot[], recorded: readonly RecordedMutation[]): readonly TurnFileChanges[];
 /** Count distinct changed paths across every turn (the sidebar badge count). */

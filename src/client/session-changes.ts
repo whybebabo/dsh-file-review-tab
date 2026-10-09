@@ -16,6 +16,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ProducedFileDiff, RecordedMutation } from '../change-types.ts'
 import { appliedDiffs, callIntent } from './mutation-call.ts'
+import { appendMutation, flattenSettlements, orderBySequence, settlementsOf } from '../mutation-order.ts'
 import { normalizeSnapshot } from './snapshot-compat.ts'
 import { diffsFromBeforeAfter } from './recorded-diffs.ts'
 
@@ -25,6 +26,13 @@ export interface SessionFileChange {
   readonly diffs: readonly ProducedFileDiff[]
   /** Terminal commands deleted this path in this turn (display-only). */
   readonly deleted?: true
+  /**
+   * Event sequence the pending deletion happened at. A deletion is an event, so
+   * a cross-channel write with a LATER sequence proves the path was recreated
+   * and clears the flag. Absent when the snapshot omitted the sequence, in which
+   * case the deletion is kept (the conservative reading).
+   */
+  readonly deletedSeq?: number | undefined
 }
 
 /** One turn's produced files, in first-seen order. */
@@ -35,10 +43,17 @@ export interface TurnFileChanges {
   readonly files: readonly SessionFileChange[]
 }
 
-/** Internal per-path accumulator: hunk list plus the last deletion state. */
+/**
+ * Internal per-path accumulator: the hunk list plus the last deletion state.
+ *
+ * `deletedSeq` is the event sequence the pending deletion happened at. A
+ * deletion is an EVENT rather than a lasting property, so the sequence is what
+ * lets a cross-channel merge tell whether a later write recreated the path.
+ */
 interface FileAccumulator {
   diffs: ProducedFileDiff[]
   deleted?: true
+  deletedSeq?: number | undefined
 }
 
 /** One mutation extracted from a settled tool block. */
@@ -46,6 +61,12 @@ interface BlockChange {
   readonly path: string
   readonly diffs: readonly ProducedFileDiff[]
   readonly deleted?: true
+}
+
+/** A block's changes plus the event sequence that orders them in its turn. */
+interface SequencedChange {
+  readonly seq: number | undefined
+  readonly change: BlockChange
 }
 
 /** The call head of a running or settled tool block, when it carries one. */
@@ -92,7 +113,16 @@ function blockChanges(block: ToolCallBlock): readonly BlockChange[] {
   return changes
 }
 
-/** Settled changes for a tool block tree (the block itself plus `subCalls`). */
+/**
+ * Settled changes for a tool block tree (the block itself plus `subCalls`).
+ *
+ * The tree contributes one settlement per top-level node, NOT one per nested
+ * dispatch: the Host recorder attributes a `run_code` root's mutations to the
+ * ROOT's seq (a nested dispatch it observes carries no separate conversation
+ * sequence of its own). Ordering the two channels against different clocks
+ * would be comparing incomparable numbers, and a child's seq could also fall
+ * past the turn boundary that owns its root.
+ */
 function collectChanges(block: ToolCallBlock, out: BlockChange[]): void {
   const settledNode = block as ToolResultNode
   if (settledNode.kind === 'tool-result') {
@@ -129,44 +159,62 @@ function turnAttribution(snapshot: ConversationSnapshot): (seq: number) => { tur
 /** Derive one session's per-turn produced-file changes (uncached core). */
 function derive(snapshot: ConversationSnapshot): TurnFileChanges[] {
   const attribute = turnAttribution(snapshot)
-  const byTurn = new Map<number, { live: boolean; files: Map<string, FileAccumulator> }>()
+  const byTurn = new Map<number, { live: boolean; changes: SequencedChange[] }>()
   const view = normalizeSnapshot(snapshot)
   for (const node of (view?.nodes ?? []) as readonly ToolResultNode[]) {
     if (node.kind !== 'tool-result' || node.isError) continue
     const changes: BlockChange[] = []
     collectChanges(node, changes)
     if (changes.length === 0) continue
+    // One top-level node, one settlement order: its own seq is the clock the
+    // recorded channel uses for this root's mutations too.
+    const seq = typeof node.seq === 'number' ? node.seq : undefined
     const { turn, live } = attribute(node.seq)
     let group = byTurn.get(turn)
     if (group === undefined) {
-      group = { live, files: new Map() }
+      group = { live, changes: [] }
       byTurn.set(turn, group)
     }
-    for (const change of changes) {
-      const existing = group.files.get(change.path)
-      if (change.deleted === true) {
-        if (existing === undefined) group.files.set(change.path, { diffs: [], deleted: true })
-        else existing.deleted = true
-        continue
-      }
-      if (existing === undefined) group.files.set(change.path, { diffs: [...change.diffs] })
-      else {
-        existing.diffs.push(...change.diffs)
-        delete existing.deleted
-      }
-    }
+    for (const change of changes) group.changes.push({ seq, change })
   }
   return [...byTurn.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([turn, group]) => ({
-      turn,
-      live: group.live,
-      files: [...group.files.entries()].map(([path, own]) => ({
-        path,
-        diffs: own.diffs,
-        ...(own.deleted === true ? { deleted: true as const } : {}),
-      })),
-    }))
+    .map(([turn, group]) => {
+      const files = new Map<string, FileAccumulator>()
+      // Order by event sequence: hunks accumulate in the order they happened.
+      // Shared seqs (one top-level node) keep the collector's order, and an
+      // unknown seq leaves the array order alone rather than guessing.
+      for (const { seq, change } of orderBySequence(group.changes)) {
+        const existing = files.get(change.path)
+        if (change.deleted === true) {
+          // A deletion is an EVENT. Recording its sequence is what lets a later
+          // cross-channel write prove it recreated the path (see `merge`).
+          if (existing === undefined) files.set(change.path, { diffs: [], deleted: true, deletedSeq: seq })
+          else { existing.deleted = true; existing.deletedSeq = seq }
+          continue
+        }
+        if (existing === undefined) {
+          const diffs: ProducedFileDiff[] = []
+          appendMutation(diffs, change.diffs, seq)
+          files.set(change.path, { diffs })
+        } else {
+          appendMutation(existing.diffs, change.diffs, seq)
+          // A later write recreates the path, so the pending deletion is stale.
+          delete existing.deleted
+          delete existing.deletedSeq
+        }
+      }
+      return {
+        turn,
+        live: group.live,
+        files: [...files.entries()].map(([path, own]) => ({
+          path,
+          diffs: own.diffs,
+          ...(own.deleted === true ? { deleted: true as const } : {}),
+          ...(own.deletedSeq !== undefined ? { deletedSeq: own.deletedSeq } : {}),
+        })),
+      }
+    })
 }
 
 /**
@@ -197,6 +245,25 @@ export interface SessionRoot {
   readonly turn: number
   readonly live: boolean
   readonly rootCallId: string
+  /**
+   * The root node's event sequence, or undefined when the snapshot omitted it.
+   * A recorded mutation is a nested dispatch of this root, so this is the
+   * sequence its changes are ordered by — it is what lets a `run_code` edit be
+   * merged into the right position among the turn's model-direct edits. When it
+   * is unknown the merge keeps array order rather than guessing.
+   */
+  readonly seq: number | undefined
+  /**
+   * How many nested dispatches of this root have SETTLED so far.
+   *
+   * The Host recorder keeps appending mutations under the SAME `rootCallId`
+   * while a long `run_code` runs, so a call-id-only dependency would never
+   * re-arm the client's `recorded` fetch: the tab would show only the mutations
+   * that landed before its first fetch. A nested dispatch settles exactly when
+   * the recorder sees it, so this count grows with the recorded data and gives
+   * the fetch a dependency that tracks it.
+   */
+  readonly progress: number
 }
 
 /** Every `run_code` tool-result node whose nested changes are not in the snapshot. */
@@ -208,24 +275,36 @@ export function deriveSessionRoots(snapshot: ConversationSnapshot): SessionRoot[
     if (node.kind !== 'tool-result' || node.isError) continue
     if (node.subCalls.length === 0) continue
     const nested: BlockChange[] = []
+    let settled = 0
     for (const child of node.subCalls) {
-      if ((child as ToolResultNode).kind === 'tool-result') collectChanges(child, nested)
+      if ((child as ToolResultNode).kind !== 'tool-result') continue
+      settled += 1
+      collectChanges(child, nested)
     }
     if (nested.some(change => change.diffs.length > 0)) continue
     const { turn, live } = attribute(node.seq)
-    roots.push({ turn, live, rootCallId: node.callId })
+    const seq = typeof node.seq === 'number' ? node.seq : undefined
+    roots.push({ turn, live, rootCallId: node.callId, seq, progress: settled })
   }
   return roots
 }
 
 /**
  * Merge Host-recorded Code Mode mutations into the snapshot-derived turns:
- * hunks rebuilt from the full before/after are appended to the owning turn's
- * file groups (same-path entries stay one row, hunks appended in dispatch
- * order), so the tab's diff rendering, status inspection and undo all work on
- * programmatic edits exactly like model-direct ones. All inputs are immutable;
- * the result is a fresh array only when a recorded mutation matched a visible
- * root.
+ * hunks rebuilt from the full before/after are inserted into the owning turn's
+ * file groups at the position their EVENT SEQUENCE puts them (same-path entries
+ * stay one row), so the tab's diff rendering, status inspection and undo all
+ * work on programmatic edits exactly like model-direct ones.
+ *
+ * Ordering is by sequence rather than "snapshot first, recorded after": the two
+ * sources are separate channels merged asynchronously, so appending recorded
+ * mutations could invert them. A `run_code` insert at the top of a file followed
+ * by a model-direct edit near its end must replay in that order — reversed, the
+ * rear edit's line anchors describe text the front insert already shifted, and
+ * BOTH undo and redo fail on a file that was perfectly reviewable.
+ *
+ * All inputs are immutable; the result is a fresh array only when a recorded
+ * mutation matched a visible root.
  */
 export function mergeRecordedTurns(
   turns: readonly TurnFileChanges[],
@@ -233,8 +312,10 @@ export function mergeRecordedTurns(
   recorded: readonly RecordedMutation[],
 ): readonly TurnFileChanges[] {
   if (recorded.length === 0 || roots.length === 0) return turns
-  const rootTurns = new Map<string, { turn: number; live: boolean }>()
-  for (const root of roots) rootTurns.set(root.rootCallId, { turn: root.turn, live: root.live })
+  const rootTurns = new Map<string, { turn: number; live: boolean; seq: number | undefined }>()
+  for (const root of roots) {
+    rootTurns.set(root.rootCallId, { turn: root.turn, live: root.live, seq: root.seq })
+  }
   const byRoot = new Map<string, RecordedMutation[]>()
   for (const mutation of recorded) {
     const list = byRoot.get(mutation.rootCallId)
@@ -247,44 +328,98 @@ export function mergeRecordedTurns(
   }
   if (!matched) return turns
 
-  const groups = new Map<number, { live: boolean; files: Map<string, FileAccumulator> }>()
+  // Recorded settlements per (turn, path), each carrying its root's sequence so
+  // it can be interleaved with the snapshot-derived ones.
+  const pending = new Map<number, Map<string, { seq: number | undefined; diffs: readonly ProducedFileDiff[] }[]>>()
+  for (const [rootCallId, mutations] of byRoot) {
+    const owner = rootTurns.get(rootCallId)
+    if (owner === undefined) continue
+    let paths = pending.get(owner.turn)
+    if (paths === undefined) { paths = new Map(); pending.set(owner.turn, paths) }
+    for (const mutation of mutations) {
+      const diffs = diffsFromBeforeAfter(mutation.path, mutation.before, mutation.after)
+      if (diffs.length === 0) continue
+      const list = paths.get(mutation.path)
+      if (list === undefined) paths.set(mutation.path, [{ seq: owner.seq, diffs }])
+      else list.push({ seq: owner.seq, diffs })
+    }
+  }
+
+  const merge = (
+    existing: FileAccumulator | undefined,
+    extra: readonly { seq: number | undefined; diffs: readonly ProducedFileDiff[] }[],
+  ): FileAccumulator => {
+    // Recover the snapshot-derived settlements, add the recorded ones, and
+    // re-flatten in event order. Stamps are reassigned by the flatten, so a
+    // reordered list still groups by coordinate space correctly.
+    const settlements = [
+      ...settlementsOf(existing?.diffs ?? []),
+      ...extra.map(entry => ({ seq: entry.seq, diffs: entry.diffs })),
+    ]
+    const diffs = flattenSettlements(settlements)
+    // A recorded (Code Mode) mutation SETTLES the path: whether it deleted or
+    // wrote, it happened after the snapshot's own settlement for this root, so
+    // its sequence decides the final state. Inheriting `existing.deleted`
+    // unconditionally kept a recreated file marked deleted, hiding its diff and
+    // its undo/reapply controls even though the later write brought it back.
+    // When the path only ever had a snapshot deletion and no recorded write,
+    // the flag still stands.
+    const lastRecordedSeq = extra.reduce<number | undefined>(
+      (highest, entry) => (entry.seq === undefined ? highest : Math.max(highest ?? entry.seq, entry.seq)),
+      undefined,
+    )
+    const recreated = diffs.length > 0
+      && lastRecordedSeq !== undefined
+      && (existing?.deletedSeq === undefined || lastRecordedSeq > existing.deletedSeq)
+    if (recreated || existing?.deleted !== true) {
+      return { diffs }
+    }
+    return {
+      diffs,
+      deleted: true,
+      ...(existing.deletedSeq !== undefined ? { deletedSeq: existing.deletedSeq } : {}),
+    }
+  }
+
+  const out: TurnFileChanges[] = []
   for (const turn of turns) {
+    const paths = pending.get(turn.turn)
     const files = new Map<string, FileAccumulator>()
     for (const file of turn.files) {
       files.set(file.path, {
         diffs: [...file.diffs],
         ...(file.deleted === true ? { deleted: true as const } : {}),
+        ...(file.deletedSeq !== undefined ? { deletedSeq: file.deletedSeq } : {}),
       })
     }
-    groups.set(turn.turn, { live: turn.live, files })
-  }
-  for (const [rootCallId, mutations] of byRoot) {
-    const owner = rootTurns.get(rootCallId)
-    if (owner === undefined) continue
-    let group = groups.get(owner.turn)
-    if (group === undefined) {
-      group = { live: owner.live, files: new Map() }
-      groups.set(owner.turn, group)
+    if (paths !== undefined) {
+      for (const [path, extra] of paths) files.set(path, merge(files.get(path), extra))
     }
-    for (const mutation of mutations) {
-      const diffs = diffsFromBeforeAfter(mutation.path, mutation.before, mutation.after)
-      if (diffs.length === 0) continue
-      const existing = group.files.get(mutation.path)
-      if (existing === undefined) group.files.set(mutation.path, { diffs: [...diffs] })
-      else existing.diffs.push(...diffs)
-    }
-  }
-  return [...groups.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([turn, group]) => ({
-      turn,
-      live: group.live,
-      files: [...group.files.entries()].map(([path, own]) => ({
+    out.push({
+      turn: turn.turn,
+      live: turn.live,
+      files: [...files.entries()].map(([path, own]) => ({
         path,
         diffs: own.diffs,
         ...(own.deleted === true ? { deleted: true as const } : {}),
+        ...(own.deletedSeq !== undefined ? { deletedSeq: own.deletedSeq } : {}),
       })),
-    }))
+    })
+  }
+  // A root whose turn the snapshot did not report still produces a group.
+  for (const [turn, paths] of pending) {
+    if (turns.some(entry => entry.turn === turn)) continue
+    const owner = roots.find(root => root.turn === turn)
+    out.push({
+      turn,
+      live: owner?.live ?? true,
+      files: [...paths.entries()].map(([path, extra]) => ({
+        path,
+        ...merge(undefined, extra),
+      })),
+    })
+  }
+  return out.sort((a, b) => a.turn - b.turn)
 }
 
 /** Count distinct changed paths across every turn (the sidebar badge count). */

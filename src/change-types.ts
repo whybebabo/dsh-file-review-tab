@@ -21,6 +21,34 @@ export interface ProducedFileDiff {
    * Host recorder's `before === null`.
    */
   readonly created?: true
+  /**
+   * Coordinate space this hunk's `oldStart`/`newStart` are expressed in.
+   *
+   * One path mutated several times in one turn accumulates hunks from several
+   * settlements, and each settlement's line numbers refer to the text the
+   * PREVIOUS settlement left behind — they are not interchangeable. Hunks
+   * sharing this stamp are anchored in the same text and must be applied
+   * back-to-front within it; groups apply in settlement order forward and in
+   * reverse order backward (see `mutation-order.ts`).
+   *
+   * Optional: absent means "all of this path's hunks share one coordinate
+   * space", the correct reading for the single-settlement payloads that
+   * predate the field.
+   */
+  readonly mutation?: number | undefined
+  /**
+   * Event sequence this settlement happened at, used to order settlements.
+   *
+   * A file's history can be split across two channels — the conversation
+   * snapshot (model-direct `edit`/`write`) and the Host recorder (nested
+   * `run_code` dispatches) — which the tab merges asynchronously. Array order is
+   * therefore a merge artifact, not history; this sequence is what restores the
+   * real order. For a snapshot settlement it is the tool-result node's `seq`,
+   * and for a recorded one the owning `run_code` root's `seq`.
+   *
+   * Optional: when absent the order is not provable and the array order stands.
+   */
+  readonly seq?: number | undefined
 }
 
 /** One produced file and the applied hunks available for review. */

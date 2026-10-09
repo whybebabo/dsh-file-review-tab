@@ -22,6 +22,51 @@ export interface FileReviewSeed {
     /** Monotonic publish id; a new value means a new link to replay. */
     readonly nonce: number;
 }
+/** A row a deep link resolved to, keyed the way the tab keys its state. */
+export interface DeepLinkRow {
+    readonly turn: number;
+    readonly path: string;
+}
+/** Everything one replay must do, computed without touching component state. */
+export interface DeepLinkPlan {
+    /** Rows to expand, as `turn|path` state keys. */
+    readonly expanded: readonly string[];
+    /** The row to scroll to (the first match), or null when nothing matched. */
+    readonly first: DeepLinkRow | null;
+    /**
+     * Archive section to reveal: a link into an auto-archived turn must render
+     * that turn before its row can be scrolled to. Null when the target is
+     * already in the main list.
+     */
+    readonly archive: {
+        readonly pages: number;
+    } | null;
+}
+/**
+ * Resolve a deep link against EVERY change the tab can render, including turns
+ * still hidden behind a closed archive section.
+ *
+ * The target is deliberately resolved against the full change set rather than
+ * the currently mounted rows. A link into an archived turn is replayed in the
+ * same commit that opens the archive, so at that moment its rows are not
+ * mounted yet; resolving against the mounted set made the match fail, the
+ * pending scroll get cleared, and the link land nowhere with no retry.
+ *
+ * @param turns - Every turn, ascending (the source of truth for all rows).
+ * @param archivedTurns - The auto-archived subset, newest first.
+ * @param paths - Paths the link targets.
+ * @param targetTurn - Turn anchor, or undefined for a path-only (legacy) link.
+ * @returns The expand set, the scroll target, and the archive reveal to apply.
+ */
+export declare function planDeepLink(turns: readonly {
+    readonly turn: number;
+    readonly live: boolean;
+    readonly files: readonly {
+        readonly path: string;
+    }[];
+}[], archivedTurns: readonly {
+    readonly turn: number;
+}[], paths: readonly string[], targetTurn: number | undefined): DeepLinkPlan;
 type SeedListener = (sessionId: string, seed: FileReviewSeed) => void;
 type InvalidationListener = (sessionId: string) => void;
 /** Publish a deep link for one session and return the stored seed. */
