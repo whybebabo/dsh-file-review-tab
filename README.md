@@ -4,6 +4,10 @@
 
 > Port of [left0ver/dsh-file-review](https://github.com/left0ver/dsh-file-review)'s change-review capability into a [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) sidebar tab, keeping the chat turn-tail review row.
 
+> **镜像说明**：本仓库（[whybebabo/dsh-file-review-tab](https://github.com/whybebabo/dsh-file-review-tab)）是 [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) 的镜像，保留其完整提交历史与插件名 `dsh-file-review-tab`（当前同步至上游 `0.7.0`，未做改名或版本改动），以便直接以 GitHub 源安装。上游若更新，请以 [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) 与 npm 上的 `dsh-file-review-tab` 为准。
+>
+> **Mirror notice**: this repository ([whybebabo/dsh-file-review-tab](https://github.com/whybebabo/dsh-file-review-tab)) mirrors [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) — same commit history and same plugin name/version (`0.7.0`, no rename or version drift) so it can be installed straight from this GitHub source. Treat the upstream repo and the npm package as canonical.
+
 ## 功能
 
 - **对话尾部审查行（与原生同款外观）**：回合结束出现「已编辑 N 个文件 +M −K」卡片，其外观**逐像素对齐 DSH 内置的 ui-deliverables 改动卡片**——同一个 60px 头部、40px 文件类型图标块、13px 标题、悬停时 `+N −K` 让位给「在侧边栏预览」、等宽字体文件行、超过 4 行折叠为「全部 N 个文件」，并同样复用官方的 `FileTypeIcon` / `HoverCard` / 折叠箭头。差异只有一处：**头部右上角多出「撤销（撤销后可点「重新应用」）与「审查」两个按钮**——内置卡片标题栏没有任何插槽，所以本插件自渲染同款卡片以容纳这两个按钮。鼠标悬停 500ms 即弹出该文件的 diff 预览；点「审查」或单个文件名，**深链打开侧边栏 Tab，自动展开对应文件的 diff 并定位到该轮分组顶部**（不再弹全宽 drawer）。
