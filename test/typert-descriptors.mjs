@@ -9,10 +9,19 @@
  *
  * Run after `pnpm build`:  node test/typert-descriptors.mjs
  */
+import { readFileSync } from 'node:fs'
 import { TypertRegistry } from '@deepseek-ai/dsh-typert-registry'
 import { Context } from '@deepseek-ai/cordis'
 
 const contribution = (await import('../lib/typert.host.js')).default
+
+/**
+ * The published package name. Every invocation id and schema key is namespaced
+ * by it, and `typert-loader` refuses a host manifest whose `package` is not the
+ * package that exports it — so deriving the prefix from the artifact under test
+ * keeps this file honest across a rename instead of asserting a stale literal.
+ */
+const PKG = contribution.package
 
 let failures = 0
 const check = (name, fn) => {
@@ -60,7 +69,7 @@ const requestCodecOf = id =>
   byId.get(id).parameters.find(p => p.wire === 'request').codec.create()
 
 check('FileReviewRequest round-trips an undo payload', () => {
-  const schema = requestCodecOf('dsh-file-review-tab#fileReview/status')
+  const schema = requestCodecOf(`${PKG}#fileReview/status`)
   const payload = {
     action: 'undo',
     files: [{
@@ -73,7 +82,7 @@ check('FileReviewRequest round-trips an undo payload', () => {
 })
 
 check('FileReviewRequest rejects a bad action', () => {
-  const schema = requestCodecOf('dsh-file-review-tab#fileReview/status')
+  const schema = requestCodecOf(`${PKG}#fileReview/status`)
   let threw = false
   try {
     schema.parse({ action: 'nope', files: [] })
@@ -84,27 +93,48 @@ check('FileReviewRequest rejects a bad action', () => {
 })
 
 check('FileReviewResult round-trips every state', () => {
-  const schema = resultSchemaOf('dsh-file-review-tab#fileReview/apply')
+  const schema = resultSchemaOf(`${PKG}#fileReview/apply`)
   const states = ['applied', 'undone', 'conflict', 'unsupported', 'error']
   schema.parse({ files: states.map(state => ({ path: 'x', state, changed: false })) })
 })
 
 check('RecordedResult round-trips a mutation', () => {
-  const schema = resultSchemaOf('dsh-file-review-tab#fileReview/recorded')
+  const schema = resultSchemaOf(`${PKG}#fileReview/recorded`)
   schema.parse({
     mutations: [{ rootCallId: 'c1', name: 'edit', path: 'a.ts', before: null, after: 'x' }],
   })
 })
 
 check('RecordedRequest round-trips rootCallIds', () => {
-  const schema = requestCodecOf('dsh-file-review-tab#fileReview/recorded')
+  const schema = requestCodecOf(`${PKG}#fileReview/recorded`)
   schema.parse({ rootCallIds: ['c1', 'c2'] })
 })
 
 check('agent lookup codec accepts a session id string', () => {
-  const codec = byId.get('dsh-file-review-tab#fileReview/status')
+  const codec = byId.get(`${PKG}#fileReview/status`)
     .parameters.find(p => p.wire === 'agentId').codec
   codec.create().parse('session-abc')
+})
+
+// 4. The manifest must be owned by the package that ships it, and the bundle
+//    must register under that same name. Both are load-time invariants, not
+//    style: typert-loader throws "the manifest must be owned by the package
+//    that exports it", and the Web module system reports a mismatch as
+//    `loaded without registering "<id>"`. A scoped rename that half-applies
+//    therefore breaks the plugin at boot, so pin the coupling here.
+check('the host manifest names this very package', () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  )
+  if (contribution.package !== manifest.name) {
+    throw new Error(
+      `TYPERT.package is ${JSON.stringify(contribution.package)} but the package is ${JSON.stringify(manifest.name)}`,
+    )
+  }
+  const bundle = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+  if (!bundle.includes(`id: ${JSON.stringify(manifest.name)}`)) {
+    throw new Error(`lib/client.js does not register module id ${JSON.stringify(manifest.name)}`)
+  }
 })
 
 // 4. Control: the pre-migration `schema:` shape must be REJECTED, proving the

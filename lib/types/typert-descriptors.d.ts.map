@@ -1,1 +1,1 @@
-{"version":3,"file":"typert-descriptors.d.ts","sourceRoot":"","sources":["../../src/typert-descriptors.ts"],"names":[],"mappings":"AAAA,kFAAkF;AAGlF,OAAO,KAAK,EAAE,oBAAoB,EAA6B,MAAM,kCAAkC,CAAA;AAEvG,eAAO,MAAM,YAAY,wBAAwB,CAAA;AA0GjD,eAAO,MAAM,uBAAuB,EAAE,SAAS,oBAAoB,EAIlE,CAAA"}
+{"version":3,"file":"typert-descriptors.d.ts","sourceRoot":"","sources":["../../src/typert-descriptors.ts"],"names":[],"mappings":"AAAA,kFAAkF;AAGlF,OAAO,KAAK,EAAE,oBAAoB,EAA6B,MAAM,kCAAkC,CAAA;AAEvG;;;;;;;GAOG;AACH,eAAO,MAAM,YAAY,mCAAmC,CAAA;AA0G5D,eAAO,MAAM,uBAAuB,EAAE,SAAS,oBAAoB,EAIlE,CAAA"}

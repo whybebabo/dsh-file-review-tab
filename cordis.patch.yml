@@ -3,4 +3,4 @@
 
 - insert:
     - id: file-review-tab
-      name: 'dsh-file-review-tab'
+      name: '@whybebabo/dsh-file-review-tab'

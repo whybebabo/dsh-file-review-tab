@@ -18,6 +18,15 @@ const here = dirname(fileURLToPath(import.meta.url))
 const file = process.argv[2] ?? resolve(here, '../lib/client.js')
 const source = readFileSync(file, 'utf8')
 
+/**
+ * The name the plugin must register under: the Web module system keys each
+ * bundle by the owning package's name, so this is read from package.json rather
+ * than pinned as a literal that a rename could silently outdate.
+ */
+const PACKAGE_NAME = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).name
+
 let failures = 0
 const check = (name, fn) => {
   try {
@@ -95,7 +104,7 @@ check('bundle evaluates without throwing', () => {
 
 check('loader received the plugin module id', () => {
   if (loaded === null) throw new Error('loader was never called')
-  if (loaded.id !== 'dsh-file-review-tab') throw new Error(`unexpected id ${loaded.id}`)
+  if (loaded.id !== PACKAGE_NAME) throw new Error(`unexpected id ${loaded.id}`)
 })
 
 check('exports apply()', () => {

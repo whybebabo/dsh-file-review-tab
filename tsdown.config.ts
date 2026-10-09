@@ -3,8 +3,19 @@ import { basename, dirname, resolve } from 'node:path'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
-const PACKAGE_NAME = 'dsh-file-review-tab'
-const CSS_VIRTUAL_PREFIX = '\0dsh-file-review-tab-css:'
+/**
+ * The package name, read from package.json rather than duplicated here.
+ *
+ * It is not cosmetic: the Web module system keys a plugin bundle by this exact
+ * string, so a bundle registering under a stale id fails at load with
+ * `loaded without registering "<id>" via __ModuleLoader__.load`
+ * (packages/client/modules/src/client/system.ts). Reading the manifest makes a
+ * rename impossible to half-apply.
+ */
+const PACKAGE_NAME: string = JSON.parse(
+  await readFile(new URL('./package.json', import.meta.url), 'utf8'),
+).name
+const CSS_VIRTUAL_PREFIX = `\0${PACKAGE_NAME}-css:`
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 const CLIENT_EXTERNALS = [
   'react',

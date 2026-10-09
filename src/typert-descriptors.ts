@@ -3,7 +3,15 @@
 import { z } from 'zod'
 import type { InvocationDescriptor, TypertCodec, TypertSchema } from '@deepseek-ai/dsh-typert-protocol'
 
-export const PACKAGE_NAME = 'dsh-file-review-tab'
+/**
+ * This package's npm name, which the Typert host face is keyed by.
+ *
+ * `typert-loader` rejects a host manifest whose `package` differs from the
+ * package that exports it ("the manifest must be owned by the package that
+ * exports it"), and the registry rejects a duplicate `package` registration —
+ * so this string has to be the real published name, not a display label.
+ */
+export const PACKAGE_NAME = '@whybebabo/dsh-file-review-tab'
 
 /**
  * dsh 0.2.0 replaced the strict codec's eager `schema` member with a lazy
