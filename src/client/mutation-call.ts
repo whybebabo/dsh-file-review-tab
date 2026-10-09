@@ -62,7 +62,11 @@ export function callIntent(name: string, argsRaw: unknown): CallIntent | null {
     if (args.command === 'create') {
       const fileText = args.file_text
       if (fileText !== undefined && typeof fileText !== 'string') return null
-      return { path, diffs: [{ path, oldText: null, newText: fileText ?? '' }], deletions }
+      // The command name is itself provenance: `create` is the one call shape
+      // whose semantics guarantee the file did not exist before. Every other
+      // branch below writes into a file that may already exist, so it leaves
+      // `created` unset rather than guessing from a null old side.
+      return { path, diffs: [{ path, oldText: null, newText: fileText ?? '', created: true }], deletions }
     }
     if (args.command === 'str_replace') {
       const oldStr = args.old_str
@@ -110,7 +114,11 @@ export function appliedDiffs(meta: unknown): readonly ProducedFileDiff[] | null 
     if (typeof path !== 'string'
       || (oldText !== null && typeof oldText !== 'string')
       || typeof newText !== 'string') return null
-    out.push({ path, oldText, newText })
+    // The engine's own diff schema documents `oldText` as "The original content
+    // (None for new files)", so a null HERE is authoritative: this is the one
+    // place where null may be decoded as a creation. The synthesized hunks
+    // below must not, because their null means "prior content unknown".
+    out.push({ path, oldText, newText, ...(oldText === null ? { created: true as const } : {}) })
   }
   return out
 }

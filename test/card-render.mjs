@@ -239,9 +239,23 @@ check('single deleted file keeps its deletion title, badge and preview note', ()
 
 check('empty file creation is identified as created in the preview', () => {
   const path = 'src/empty.ts'
-  const html = render([entry(path, [{ path, oldText: null, newText: '' }])])
+  // The creation fact rides the explicit `created` flag, which is what the
+  // engine's `meta.diffs` decode sets for a null old side. A null old side
+  // ALONE is not a creation — `write` overwrites, `str_replace_editor insert`
+  // and an `edit` with an empty old_string also produce one.
+  const html = render([entry(path, [{ path, oldText: null, newText: '', created: true }])])
   if (!html.includes('Created in this turn')) throw new Error('empty creation lost its created note')
   if (html.includes('>Unchanged</p>')) throw new Error('empty creation was labeled unchanged')
+})
+
+check('a null old side with no creation flag is not labeled created', () => {
+  // The regression guard for the label above: an overwrite whose prior content
+  // is unknown (no meta.diffs) must not claim the file is new.
+  const path = 'src/existing.ts'
+  const html = render([entry(path, [{ path, oldText: null, newText: 'replaced\n' }])])
+  if (html.includes('Created in this turn')) {
+    throw new Error('an unprovenanced null old side was labeled created')
+  }
 })
 
 const many = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts']

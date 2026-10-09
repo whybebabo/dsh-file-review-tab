@@ -42,7 +42,7 @@ export function diffsFromBeforeAfter(
   after: string,
 ): readonly ProducedFileDiff[] {
   if (before === null) {
-    return after === '' ? [] : [{ path, oldText: null, newText: after }]
+    return after === '' ? [] : [{ path, oldText: null, newText: after, created: true }]
   }
   const oldLines = diffContentLines(before)
   const newLines = diffContentLines(after)

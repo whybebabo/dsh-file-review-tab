@@ -58,7 +58,10 @@ if (pairLines === undefined) {
   process.exit(failures === 0 ? 0 : 1)
 }
 
-const edit = (oldText, newText) => [{ path: 'a.ts', oldText, newText, oldStart: 1, newStart: 1 }]
+const edit = (oldText, newText, created = false) => [{
+  path: 'a.ts', oldText, newText, oldStart: 1, newStart: 1,
+  ...(created ? { created: true } : {}),
+}]
 
 check('a one-line edit trims to a small hunk, not the whole file', () => {
   const before = Array.from({ length: 200 }, (_v, i) => `line ${i + 1}`).join('\n')
@@ -91,11 +94,29 @@ check('a pure creation is one-sided (native collapses the split view)', () => {
 })
 
 check('comparison notes preserve empty creations and deletions', () => {
-  assert(diffNote(edit(null, ''), []) === 'created', 'empty creation was labeled unchanged')
+  assert(diffNote(edit(null, '', true), []) === 'created', 'empty creation was labeled unchanged')
   assert(diffNote([], [], true) === 'deleted', 'deleted change lost its deleted note')
   assert(diffNote(edit('same', 'same'), []) === 'unchanged', 'unchanged comparison lost its note')
   const changed = edit('before', 'after')
   assert(diffNote(changed, toNativeHunks(changed)) === undefined, 'ordinary edit got a note')
+})
+
+check('a null old side alone never means "created"', () => {
+  // The regression this guards: inferring the creation note from
+  // `oldText === null`. Null also means "the prior content is unavailable", and
+  // mutation-call.ts synthesizes exactly that when a result carries no
+  // meta.diffs for a `write` overwrite, a `str_replace_editor insert`, or an
+  // `edit` whose old_string is empty. All three change files that ALREADY
+  // EXISTED, so labeling them "created in this turn" was wrong.
+  for (const [label, oldText] of [['write overwrite', null], ['insert', null], ['empty old_string', null]]) {
+    const diffs = edit(oldText, 'new content\n')
+    const note = diffNote(diffs, toNativeHunks(diffs))
+    assert(note !== 'created', `${label} was labeled created from a null old side`)
+  }
+  // An explicit creation flag is what carries the fact, and it must survive
+  // alongside a non-null old side (an empty file recreated in place).
+  const flagged = edit('', 'new content\n', true)
+  assert(diffNote(flagged, toNativeHunks(flagged)) === 'created', 'an explicit creation flag was ignored')
 })
 
 check('a pure deletion is one-sided', () => {
@@ -146,6 +167,60 @@ check('multiple distant edits split into separate hunks', () => {
   const hunks = toNativeHunks(edit(before, after), 3)
   assert(hunks.length === 2, `expected 2 hunks, got ${hunks.length}`)
 })
+
+// The provenance rule, exercised end to end through the modules that actually
+// produce these diffs — a unit test on diffNote alone would not catch a wrong
+// flag at the source, which is where the bug lived.
+const { deriveSessionChanges } = await import('../src/client/session-changes.ts').catch(() => ({}))
+if (deriveSessionChanges !== undefined) {
+  /** A settled tool-result node carrying NO meta.diffs (the fallback path). */
+  const node = (name, args, meta = {}) => ({
+    kind: 'tool-result', seq: 1, isError: false, subCalls: [], callId: 'call-1',
+    call: { name, argsRaw: JSON.stringify(args) }, meta,
+  })
+  const noteOfNode = (settled) => {
+    const snapshot = { nodes: [settled], turnEnds: new Map([[1, 1]]), partial: null, runningCalls: [] }
+    const file = deriveSessionChanges(snapshot).flatMap(turn => turn.files)[0]
+    if (file === undefined) return { note: 'NO FILE', diffs: [] }
+    const hunks = toNativeHunks(file.diffs, 3)
+    return { note: diffNote(file.diffs, hunks), diffs: file.diffs }
+  }
+
+  check('only authoritative provenance is labeled "created"', () => {
+    // Genuine creations: the call shape guarantees the file did not exist.
+    const create = noteOfNode(node('str_replace_editor',
+      { command: 'create', path: 'new.ts', file_text: 'hello\n' }))
+    assert(create.note === 'created', `str_replace_editor create: ${create.note}`)
+    assert(create.diffs.every(diff => diff.created === true), 'create did not set the explicit flag')
+
+    // Edits to files that already existed, on the no-meta fallback path. Each of
+    // these synthesizes `oldText: null` merely because the prior content is
+    // unknown, which is exactly what must NOT be read as a creation.
+    for (const [label, settled] of [
+      ['str_replace_editor insert', node('str_replace_editor',
+        { command: 'insert', path: 'existing.ts', new_str: 'inserted\n' })],
+      ['write overwrite', node('write', { file_path: 'existing.ts', content: 'replaced\n' })],
+      ['edit with empty old_string', node('edit',
+        { file_path: 'existing.ts', old_string: '', new_string: 'x\n' })],
+    ]) {
+      const result = noteOfNode(settled)
+      assert(result.note !== 'created', `${label} was labeled created (note=${result.note})`)
+      assert(result.diffs.every(diff => diff.created !== true), `${label} set the creation flag`)
+    }
+  })
+
+  check('the engine wire path decodes a null old side as a creation', () => {
+    // meta.diffs is authoritative: dsh's own schema documents `oldText` as
+    // "The original content (None for new files)". This is the ONE path where a
+    // null old side may be read as a creation, and it must keep working.
+    const settled = node('write', { file_path: 'made.ts', content: 'a\n' }, {
+      diffs: [{ path: 'made.ts', oldText: null, newText: 'a\n' }],
+    })
+    const result = noteOfNode(settled)
+    assert(result.note === 'created', `a wire creation lost its note (${result.note})`)
+    assert(result.diffs.every(diff => diff.created === true), 'the wire creation did not set the flag')
+  })
+}
 
 console.log(failures === 0 ? '\nALL DIFF CORE CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
 process.exitCode = failures === 0 ? 0 : 1

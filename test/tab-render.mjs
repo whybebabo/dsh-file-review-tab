@@ -203,6 +203,34 @@ const buttonOf = (html, tool) => {
   return html.slice(open, close === -1 ? undefined : close + '</button>'.length)
 }
 
+/**
+ * The `<span>` a tooltip renders, but ONLY when it directly wraps `tool`'s button.
+ *
+ * `html.lastIndexOf('data-tooltip=')` finds *any* earlier tooltip, so a check
+ * written that way passes as long as some previous tool has one — removing this
+ * tool's own tooltip went unnoticed, because the sibling before it still
+ * supplied a match. Anchoring on the button and requiring the wrapper to be the
+ * immediately enclosing element is what makes the assertion about THIS tool.
+ *
+ * @returns the wrapper's opening tag, or null when the button is not wrapped.
+ */
+const tooltipAround = (html, tool) => {
+  const at = html.indexOf(`data-review-tool="${tool}"`)
+  if (at === -1) return null
+  const buttonOpen = html.lastIndexOf('<button', at)
+  if (buttonOpen === -1) return null
+  // The element immediately preceding the button must be a tooltip wrapper whose
+  // opening tag ends exactly where the button begins. Anything else — a sibling
+  // tooltip further back, or intervening content — means this button is not the
+  // wrapped child.
+  const wrapperOpen = html.lastIndexOf('<span', buttonOpen)
+  if (wrapperOpen === -1) return null
+  const tagEnd = html.indexOf('>', wrapperOpen)
+  if (tagEnd === -1 || tagEnd + 1 !== buttonOpen) return null
+  const tag = html.slice(wrapperOpen, tagEnd + 1)
+  return tag.includes('data-tooltip=') ? tag : null
+}
+
 
 /** Mount the tab against an arbitrary conversation snapshot. */
 const renderNodes = (nodes, extra = {}) => {
@@ -348,7 +376,7 @@ check('the header carries the selected file +N/-N counts', () => {
   }
 })
 
-check('every header tool is a 500ms tooltip', () => {
+check('every header tool is a 500ms tooltip, and every tool has one', () => {
   const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
   const delays = [...html.matchAll(/data-delay="(\d+)"/g)].map(m => m[1])
   // split + wrap + refresh. The view toggles are native's; refresh is the one
@@ -357,6 +385,13 @@ check('every header tool is a 500ms tooltip', () => {
   if (delays.length !== 3) throw new Error(`expected 3 header tooltips, got ${delays.length}`)
   for (const delay of delays) {
     if (delay !== '500') throw new Error(`a tooltip uses ${delay}ms, native uses 500ms`)
+  }
+  // The count alone does not attribute tooltips to tools: three tooltips could
+  // sit on one tool while another went bare. Assert the pairing directly.
+  for (const tool of ['split', 'wrap', 'refresh']) {
+    const wrapper = tooltipAround(html, tool)
+    if (wrapper === null) throw new Error(`${tool} has no tooltip of its own`)
+    if (!/data-delay="500"/.test(wrapper)) throw new Error(`${tool}'s tooltip is not 500ms`)
   }
 })
 
@@ -388,11 +423,13 @@ check('the refresh tool is a labelled, tooltipped header button', () => {
   if (tag === null) throw new Error('no refresh tool in the header')
   // An icon-only control must carry its own accessible name.
   if (!tag.includes('aria-label=')) throw new Error('the refresh tool has no aria-label')
-  // And a tooltip, so the glyph is explained on hover like native's tools. The
-  // tooltip wraps the button, so look at its opening tag just before.
-  const at = html.indexOf('data-review-tool="refresh"')
-  const tip = html.slice(Math.max(0, html.lastIndexOf('data-tooltip=', at)), at)
-  if (!tip.includes('data-tooltip=')) throw new Error('the refresh tool has no tooltip')
+  // And a tooltip that DIRECTLY wraps THIS button. Searching back for any
+  // data-tooltip= would be satisfied by the wrap button's tooltip next door.
+  const wrapper = tooltipAround(html, 'refresh')
+  if (wrapper === null) throw new Error('the refresh tool is not wrapped in its own tooltip')
+  if (!/data-delay="500"/.test(wrapper)) {
+    throw new Error(`the refresh tooltip does not use the native 500ms delay: ${wrapper}`)
+  }
 })
 
 check('the refresh tool is enabled only when there is state to re-check', () => {

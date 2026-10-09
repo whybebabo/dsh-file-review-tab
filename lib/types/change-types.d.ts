@@ -6,6 +6,20 @@ export interface ProducedFileDiff {
     readonly newText: string;
     readonly oldStart?: number | undefined;
     readonly newStart?: number | undefined;
+    /**
+     * The engine reported that this hunk's old side did not exist, so the file was
+     * created in this turn.
+     *
+     * This is deliberately SEPARATE from `oldText === null`, which cannot carry
+     * the fact on its own: `null` also means "the prior content is not
+     * reconstructable", and `mutation-call.ts` synthesizes exactly that for a
+     * `write` overwrite, a `str_replace_editor insert` and an `edit` whose
+     * `old_string` is empty — all of which are edits to files that already
+     * existed. Only the two authoritative sources set this flag: the engine's
+     * `meta.diffs` (whose schema documents null as "None for new files") and the
+     * Host recorder's `before === null`.
+     */
+    readonly created?: true;
 }
 /** One produced file and the applied hunks available for review. */
 export interface ProducedFileReview {

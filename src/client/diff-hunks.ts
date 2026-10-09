@@ -99,14 +99,23 @@ export function summarizeDiffs(diffs: readonly ProducedFileDiff[]): DiffStats {
   return { added, removed }
 }
 
-/** Derive the comparison note from the recorded change rather than hunk count alone. */
+/**
+ * Derive the comparison note from the recorded change rather than hunk count alone.
+ *
+ * The creation note comes from the explicit `created` flag, never from
+ * `oldText === null`. Null old text means the prior content is unavailable, and
+ * that is also what `mutation-call.ts` synthesizes when a result carries no
+ * `meta.diffs` for a `write` overwrite, a `str_replace_editor insert` or an
+ * `edit` with an empty `old_string` — all edits to files that already existed.
+ * Inferring creation from null labeled those "created in this turn".
+ */
 export function diffNote(
   diffs: readonly ProducedFileDiff[],
   hunks: readonly NativeDiffHunk[],
   deleted = false,
 ): DiffNote {
   if (deleted) return 'deleted'
-  if (diffs.length > 0 && diffs.every(diff => diff.oldText === null)) return 'created'
+  if (diffs.length > 0 && diffs.every(diff => diff.created === true)) return 'created'
   return hunks.length === 0 ? 'unchanged' : undefined
 }
 

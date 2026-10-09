@@ -45,7 +45,16 @@ export declare function isOneSided(hunks: readonly NativeDiffHunk[]): boolean;
 export declare function pairLines(diff: ProducedFileDiff): DiffLine[];
 /** Count added and removed lines using the viewer's exact line-diff algorithm. */
 export declare function summarizeDiffs(diffs: readonly ProducedFileDiff[]): DiffStats;
-/** Derive the comparison note from the recorded change rather than hunk count alone. */
+/**
+ * Derive the comparison note from the recorded change rather than hunk count alone.
+ *
+ * The creation note comes from the explicit `created` flag, never from
+ * `oldText === null`. Null old text means the prior content is unavailable, and
+ * that is also what `mutation-call.ts` synthesizes when a result carries no
+ * `meta.diffs` for a `write` overwrite, a `str_replace_editor insert` or an
+ * `edit` with an empty `old_string` — all edits to files that already existed.
+ * Inferring creation from null labeled those "created in this turn".
+ */
 export declare function diffNote(diffs: readonly ProducedFileDiff[], hunks: readonly NativeDiffHunk[], deleted?: boolean): DiffNote;
 /**
  * The message a comparison with nothing to draw shows. A file removed by a

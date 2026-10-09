@@ -31,6 +31,35 @@ const check = (name, fn) => {
 
 let loaded = null
 
+/**
+ * The complete body of a top-level `function name(...) { ... }` declaration,
+ * found by brace matching.
+ *
+ * `source.indexOf('\\n}', at)` is NOT good enough: minified-but-readable output
+ * indents nested blocks, so the first `\n}` usually closes an inner block and
+ * the slice silently extends across the NEXT function too — which made a
+ * per-function assertion count matches belonging to its neighbour.
+ *
+ * @param name - the declared function name.
+ * @returns the declaration's full text, or null when it is absent.
+ */
+const functionBody = (name) => {
+  const at = source.search(new RegExp(`function\\s+${name}\\s*\\(`))
+  if (at === -1) return null
+  const open = source.indexOf('{', at)
+  if (open === -1) return null
+  let depth = 0
+  for (let i = open; i < source.length; i += 1) {
+    const ch = source[i]
+    if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) return source.slice(at, i + 1)
+    }
+  }
+  return null
+}
+
 // The browser resolves these from the module system's platform seed table
 // (the shell's staticModules), not from node_modules: in the page,
 // @deepseek-ai/dsh-client-ui-primitives is already bundled into the shell, so a
@@ -231,6 +260,49 @@ check('the recorded fetch clears its pending flag on every exit path', () => {
   }
   if (!/\.finally\(/.test(effect)) {
     throw new Error('the recorded fetch has no finally(), so a rejection strands its pending flag')
+  }
+})
+
+check('the creation note is never inferred from a null old side', () => {
+  // The bug this guards: `diffs.every(diff => diff.oldText === null)` labeled a
+  // file "created in this turn" whenever the prior content was unknown. A null
+  // old side also comes from a `write` overwrite, a `str_replace_editor insert`
+  // and an `edit` with an empty old_string — all edits to files that already
+  // existed. The note must read the explicit provenance flag instead.
+  const body = functionBody('diffNote')
+  if (body === null) throw new Error('no diffNote in the bundle')
+  if (/oldText\s*===\s*null/.test(body)) {
+    throw new Error('diffNote still infers the creation note from oldText === null')
+  }
+  if (!/created\s*===\s*true/.test(body)) {
+    throw new Error('diffNote does not read the explicit created flag')
+  }
+})
+
+check('only authoritative sources set the creation flag', () => {
+  // Two sources know a file was created: the engine's meta.diffs (whose schema
+  // documents null as "None for new files") and the Host recorder's
+  // before === null. The synthesized fallbacks must NOT set it.
+  const wireBody = functionBody('appliedDiffs')
+  if (wireBody === null) throw new Error('no appliedDiffs in the bundle')
+  if (!/oldText === null \? \{ created: true \}/.test(wireBody)) {
+    throw new Error('appliedDiffs does not flag a wire creation')
+  }
+  const recordedBody = functionBody('diffsFromBeforeAfter')
+  if (recordedBody === null) throw new Error('no diffsFromBeforeAfter in the bundle')
+  if (!/before === null/.test(recordedBody) || !/created: true/.test(recordedBody)) {
+    throw new Error('the recorded before === null creation is not flagged')
+  }
+  // And the synthesized call-intent hunks must stay unflagged, except in the
+  // `create` branch, whose command name IS the provenance.
+  const intentBody = functionBody('callIntent')
+  if (intentBody === null) throw new Error('no callIntent in the bundle')
+  const flagged = [...intentBody.matchAll(/oldText: (?:null|oldStr \?\? null)[\s\S]{0,80}?created: true/g)].length
+  if (flagged !== 1) {
+    throw new Error(`callIntent sets the creation flag in ${flagged} places; expected only the create branch`)
+  }
+  if (!/command === "create"/.test(intentBody) && !/command === 'create'/.test(intentBody)) {
+    throw new Error('the single flagged branch is not the create command')
   }
 })
 
