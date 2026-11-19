@@ -2,9 +2,10 @@
  * Drive the plugin's HOST half (`apply`) against a REAL cordis Context.
  *
  * This is the real module entry the DSH host loader calls. It proves the host
- * half still wires up on dsh 0.2.0 — the system-prompt section registers, the
- * `tools/post-execute` recorder installs, and the `fileReview` Remote service
- * constructs and answers `recorded()` — without needing a full profile boot.
+ * half still wires up on the current dsh line — `apply()` needs no host
+ * services, the `tools/post-execute` recorder installs, and the `fileReview`
+ * Remote service constructs and answers `recorded()` — without needing a full
+ * profile boot.
  *
  * A hand-rolled context stub is not enough: `TypertRemoteService extends
  * Service` publishes itself through the cordis reflection layer, so only a real
@@ -34,17 +35,16 @@ const effects = []
 
 const ctx = new Context()
 
-// The system-prompt registry is normally contributed by dsh-system-prompt;
-// stand in for it so apply() can register its guidance section. cordis only
-// lets a context read services registered through provide/Service, so the stub
-// goes in through provide() rather than a plain property set.
-const systemPromptStub = {
+// The host half must NOT register prompt guidance: the Web composition already
+// contributes `ui:deliverable-file-references`, and this plugin's own section
+// contradicted it (inline code vs. Markdown links) in every request. A spy that
+// records and throws turns any regression into a hard failure here.
+ctx.provide('systemPrompt', {
   section(section) {
     sections.push(section)
-    return () => {}
+    throw new Error('the host half registered a system-prompt section of its own')
   },
-}
-ctx.provide('systemPrompt', systemPromptStub)
+})
 
 // Observe effects without replacing cordis's own implementation.
 const originalEffect = ctx.effect.bind(ctx)
@@ -63,12 +63,10 @@ await check('apply() runs without throwing', () => {
   mod.apply(ctx)
 })
 
-await check('registers exactly one system-prompt section', () => {
-  if (sections.length !== 1) throw new Error(`expected 1 section, got ${sections.length}`)
-  const [section] = sections
-  if (section.name !== 'ui:file-review-references') throw new Error(`unexpected name ${section.name}`)
-  if (typeof section.text !== 'string' || section.text.length === 0) throw new Error('empty text')
-  if (section.order !== 190) throw new Error(`unexpected order ${section.order}`)
+await check('registers no system-prompt guidance of its own', () => {
+  if (sections.length !== 0) {
+    throw new Error(`expected no sections, got ${sections.map(section => section.name).join(', ')}`)
+  }
 })
 
 await check('publishes the fileReview Remote service', () => {
@@ -93,8 +91,8 @@ await check('exports the service and hunk transformer surface', () => {
   if (typeof mod.transformFile !== 'function') throw new Error('transformFile missing')
 })
 
-await check('inject declares the systemPrompt service', () => {
-  if (!Array.isArray(mod.inject) || !mod.inject.includes('systemPrompt')) {
+await check('requires no host services of its own', () => {
+  if (!Array.isArray(mod.inject) || mod.inject.length !== 0) {
     throw new Error(`inject: ${JSON.stringify(mod.inject)}`)
   }
 })

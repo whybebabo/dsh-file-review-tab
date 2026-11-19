@@ -33,6 +33,7 @@ import type {
 import { basename, selectProducedFiles, type ProducedFileReview } from './turn-deliverables.ts'
 import type { NS } from './chat-locales.ts'
 import { diffNote, summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
+import { changeReversible } from '../reversible.ts'
 import { anchorCalls, useHunkAnchors } from './hunk-anchors.ts'
 import { NativeDiff } from './NativeDiff.tsx'
 import { subscribeFileReviewInvalidation } from './deep-link.ts'
@@ -337,19 +338,20 @@ function ProducedFilesCard({
     ),
     [reviewsWithStats],
   )
-  // Deleted paths carry no hunks and cannot be inspected or toggled; they are
-  // display vocabulary on the rows only.
+  // Deleted paths carry no hunks and cannot be toggled; a file whose recorded
+  // hunks the Host cannot replay (unknown prior side, unanchored empty side) is
+  // excluded too: the Host answers `unsupported`, and counting that as a
+  // failure made every mixed batch report a partial failure even though all
+  // applicable files succeeded. Both conditions come from the same rule the
+  // Host applies (`src/reversible.ts`).
   const toggleFiles = useMemo(() => reviews
-    .filter(review => review.deleted !== true)
+    .filter(review => review.deleted !== true && changeReversible(review.path, review.diffs))
     .map(review => ({ path: review.path, diffs: review.diffs })), [reviews])
-  const reversiblePaths = useMemo(() => new Set(reviews.filter(review =>
-    review.diffs.length > 0 && review.diffs.every(diff =>
-      diff.path === review.path
-      && diff.oldText !== null
-      && diff.oldText !== diff.newText
-      && (diff.oldText !== '' || diff.oldStart !== undefined)
-      && (diff.newText !== '' || diff.newStart !== undefined))).map(review => review.path)), [reviews])
-  const hasReversibleFiles = reversiblePaths.size > 0
+  const reversiblePaths = useMemo(
+    () => new Set(toggleFiles.map(file => file.path)),
+    [toggleFiles],
+  )
+  const hasReversibleFiles = toggleFiles.length > 0
   // Native folds at COLLAPSED_ROWS with "All N files"; a single file is
   // header-only, exactly like the built-in card.
   const singleFile = reviewsWithStats.length === 1 ? reviewsWithStats[0] : undefined
@@ -386,14 +388,28 @@ function ProducedFilesCard({
       : currentAction
   }, [reversiblePaths])
 
+  // Content fingerprint: `reviews` (and therefore `toggleFiles`) is rebuilt on
+  // every render of this entry, so depending on those arrays re-asked the Host
+  // for a finished turn's state on every re-render and flipped `statusPending`,
+  // which disabled Undo in bursts. The fingerprint changes only when the toggle
+  // payload really changes, and the callback rides a ref so an unrelated
+  // re-render cannot re-arm the request either.
+  const toggleKey = useMemo(
+    () => toggleFiles.map(file => `${file.path}\u0000${file.diffs.length}`).join('\u0001'),
+    [toggleFiles],
+  )
+  const inspectRef = useRef(inspectChanges)
+  inspectRef.current = inspectChanges
   useEffect(() => {
+    if (toggleKey === '') { setStatusPending(false); setToggleAction('undo'); return }
     let active = true
     setStatusPending(true)
-    void inspectChanges({ action: 'undo', files: toggleFiles }).then((result) => {
+    const files = toggleFiles
+    void inspectRef.current({ action: 'undo', files }).then((result) => {
       if (!active) return
-      const allUndone = reversiblePaths.size > 0
-        && [...reversiblePaths].every(path =>
-          result.files.find(file => file.path === path)?.state === 'undone')
+      const allUndone = files.length > 0
+        && files.every(file =>
+          result.files.find(entry => entry.path === file.path)?.state === 'undone')
       setToggleAction(allUndone ? 'redo' : 'undo')
     }).catch(() => {
       // The action remains usable after a transient inspection failure; execution
@@ -402,7 +418,8 @@ function ProducedFilesCard({
       if (active) setStatusPending(false)
     })
     return () => { active = false }
-  }, [inspectChanges, reversiblePaths, statusVersion, toggleFiles])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toggleKey, statusVersion])
 
   const runToggle = useCallback(() => {
     if (statusPending || togglePending || !hasReversibleFiles) return

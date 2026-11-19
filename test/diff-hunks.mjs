@@ -65,6 +65,38 @@ const edit = (oldText, newText, created = false) => [{
 
 const { structuredPatch } = await import('diff')
 
+// The shared reversibility rule: the Host service and both surfaces must agree
+// on exactly which hunks can be replayed, or a mixed turn reports a partial
+// failure for files the service was always going to refuse.
+const { changeReversible } = await import('../src/reversible.ts')
+
+check('a complete anchored hunk is reversible', () => {
+  assert(changeReversible('a.ts', edit('old\n', 'new\n')), 'a complete hunk was refused')
+})
+
+check('an unknown prior side is not reversible', () => {
+  assert(!changeReversible('a.ts', [{ path: 'a.ts', oldText: null, newText: 'x\n' }]),
+    'a null old side (created/unknown history) was accepted')
+})
+
+check('an unanchored empty side is not reversible', () => {
+  assert(!changeReversible('a.ts', [{ path: 'a.ts', oldText: '', newText: 'x\n' }]),
+    'an empty old side without oldStart was accepted')
+  assert(!changeReversible('a.ts', [{ path: 'a.ts', oldText: 'x\n', newText: '' }]),
+    'an empty new side without newStart was accepted')
+  assert(changeReversible('a.ts', [{ path: 'a.ts', oldText: '', newText: 'x\n', oldStart: 1, newStart: 1 }]),
+    'a legally anchored empty old side was refused')
+})
+
+check('an identical pair and a foreign path are not reversible', () => {
+  assert(!changeReversible('a.ts', edit('same\n', 'same\n')), 'an unchanged pair was accepted')
+  assert(!changeReversible('b.ts', edit('old\n', 'new\n')), 'a hunk naming another path was accepted')
+})
+
+check('an empty change set is not reversible', () => {
+  assert(!changeReversible('a.ts', []), 'an empty change set was accepted')
+})
+
 /**
  * dsh-tool-fs's own `computeHunkDiffs`: one context fragment per hunk, 3 lines
  * of context, and no line numbers in the payload. Reproduced here from the

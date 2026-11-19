@@ -163,7 +163,13 @@ export function useHunkAnchors(
     let active = true
     void load(wanted)
       .then((entries) => {
-        if (active) setLookup(rememberHunkAnchors(sessionId, entries))
+        // Cache the answer even when this surface unmounted while it was in
+        // flight. The claim above is permanent (only a rejection releases it),
+        // so dropping the answer would leave these hunks hunk-local for the
+        // rest of the session — and the chat card's hover preview unmounts the
+        // moment the pointer leaves.
+        const next = rememberHunkAnchors(sessionId, entries)
+        if (active) setLookup(next)
       })
       .catch(() => {
         // The Host never answered — not an answer about these calls, so release

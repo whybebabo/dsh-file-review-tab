@@ -48,6 +48,7 @@ import { useHunkAnchors, anchorCalls as anchorCallsOf } from './hunk-anchors.ts'
 import { recordedFetchDelay } from './recorded-fetch.ts'
 import { NativeDiff, type NativeDiffLabels } from './NativeDiff.tsx'
 import { t } from './locales.ts'
+import { changeReversible } from '../reversible.ts'
 import {
   currentFileReviewSeed,
   planDeepLink,
@@ -124,14 +125,13 @@ interface PendingScroll {
   readonly turn: number | null
 }
 
-/** A change group is reversible only with complete contextual hunks. */
+/**
+ * A change group is reversible only with complete contextual hunks — the same
+ * rule the Host applies before touching disk (see `src/reversible.ts`), so the
+ * rows and turn batches this tab offers are exactly the ones it will accept.
+ */
 function isReversible(file: SessionFileChange): boolean {
-  return file.diffs.length > 0 && file.diffs.every(diff =>
-    diff.path === file.path
-    && diff.oldText !== null
-    && diff.oldText !== diff.newText
-    && (diff.oldText !== '' || diff.oldStart !== undefined)
-    && (diff.newText !== '' || diff.newStart !== undefined))
+  return changeReversible(file.path, file.diffs)
 }
 
 function addStats(left: DiffStats, right: DiffStats): DiffStats {
@@ -780,7 +780,12 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
             disabled={statusPending || busyKey !== null || reversible.length === 0}
             title={reversible.length === 0 ? t('toggleUnavailable') : undefined}
             onClick={() => {
-              runToggle(turnKey, turn.files.filter(file => file.deleted !== true).map(file => ({
+              // Only the reversible files: the Host answers `unsupported` for
+              // any other, and the success test below counts every non-target
+              // state as a failure — so a mixed turn used to always report
+              // "some files could not be undone" even when all applicable ones
+              // succeeded.
+              runToggle(turnKey, reversible.map(file => ({
                 turn: turn.turn, path: file.path, diffs: file.diffs,
               })), turnAction)
             }}
@@ -811,6 +816,9 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     // whether a one-sided change can use the side-by-side layout. The anchors
     // are what turn fragment-relative counts into the file's own line numbers.
     const hunks = isOpen ? toNativeHunks(file.diffs, 3, anchors) : []
+    // The diff body's id for the toggle's `aria-controls`; turn-scoped so a
+    // path changed in two turns cannot collide.
+    const diffId = `file-review-diff-${turn.turn}-${encodeURIComponent(file.path)}`
     return (
       <li
         key={file.path}
@@ -820,34 +828,28 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
           else rowRefs.current.set(key, element)
         }}
       >
-        <div
-          className={css.fileRow}
-          role="button"
-          tabIndex={0}
-          title={file.path}
-          aria-expanded={isOpen}
-          onClick={() => { toggleExpanded(key) }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              toggleExpanded(key)
-            }
-          }}
-        >
-          <Chevron open={isOpen} />
-          <span className={css.fileName}>{basename(file.path)}</span>
-          {file.deleted === true
-            ? <span className={css.deletedBadge}>{t('deleted')}</span>
-            : <Stats stats={stats} />}
-          {file.deleted !== true && <StateBadge state={state} />}
+        <div className={css.fileRow} data-review-row={file.path}>
+          <button
+            type="button"
+            className={css.rowToggle}
+            data-review-row-toggle=""
+            aria-expanded={isOpen}
+            aria-controls={isOpen ? diffId : undefined}
+            title={file.path}
+            onClick={() => { toggleExpanded(key) }}
+          >
+            <Chevron open={isOpen} />
+            <span className={css.fileName}>{basename(file.path)}</span>
+            {file.deleted === true
+              ? <span className={css.deletedBadge}>{t('deleted')}</span>
+              : <Stats stats={stats} />}
+            {file.deleted !== true && <StateBadge state={state} />}
+          </button>
           {file.deleted !== true && (
             <button
               type="button"
               className={`${css.smallButton} ${css.editorButton}`}
-              onClick={(event) => {
-                event.stopPropagation()
-                openInEditor(file.path)
-              }}
+              onClick={() => { openInEditor(file.path) }}
             >
               {t('openInEditor')}
             </button>
@@ -859,8 +861,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
             title={file.deleted === true
               ? t('deletedHint')
               : (!reversible ? t('toggleUnavailable') : undefined)}
-            onClick={(event) => {
-              event.stopPropagation()
+            onClick={() => {
               runToggle(key, [{ turn: turn.turn, path: file.path, diffs: file.diffs }], fileAction)
             }}
           >
@@ -870,7 +871,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
           </button>
         </div>
         {isOpen && (
-          <div className={css.diffWrap}>
+          <div className={css.diffWrap} id={diffId}>
             <LazyDiff>
               {file.deleted === true || file.diffs.length === 0
                 // Both of this plugin's "no comparison" cases map onto native's

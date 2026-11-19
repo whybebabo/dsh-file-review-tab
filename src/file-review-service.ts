@@ -8,9 +8,10 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { hunksForApply, mutationGroups, orderBySequence } from './mutation-order.ts'
 import { locateAnchors } from './anchor-locate.ts'
+import { changeReversible } from './reversible.ts'
 import type {
   AnchorRequest, AnchorResult, FileReviewAction, FileReviewChange, FileReviewFileResult,
-  FileReviewRequest, FileReviewResult, ProducedFileDiff, RecordedAnchor, RecordedMutation,
+  FileReviewRequest, FileReviewResult, RecordedAnchor, RecordedMutation,
   RecordedRequest, RecordedResult,
 } from './change-types.ts'
 
@@ -101,20 +102,13 @@ function replaceHunk(
   return text.slice(0, offset) + replacement + text.slice(offset + source.length)
 }
 
-function hunkSupported(diff: ProducedFileDiff, path: string): boolean {
-  if (diff.path !== path || diff.oldText === null || diff.oldText === diff.newText) return false
-  if (diff.oldText === '' && diff.oldStart === undefined) return false
-  if (diff.newText === '' && diff.newStart === undefined) return false
-  return true
-}
-
 /** Apply a complete file's hunk sequence in memory, or report a strict mismatch. */
 export function transformFile(
   text: string,
   file: FileReviewChange,
   action: FileReviewAction,
 ): string | null {
-  if (file.diffs.length === 0 || !file.diffs.every(diff => hunkSupported(diff, file.path))) {
+  if (!changeReversible(file.path, file.diffs)) {
     return null
   }
   // Hunks from different settlements are anchored in different texts, so the
@@ -168,7 +162,7 @@ function hunkSidePresent(text: string, file: FileReviewChange, side: 'old' | 'ne
 }
 
 function inspectText(text: string, file: FileReviewChange): InspectedFile {
-  if (file.diffs.length === 0 || !file.diffs.every(diff => hunkSupported(diff, file.path))) {
+  if (!changeReversible(file.path, file.diffs)) {
     return { state: 'unsupported', reason: 'change has no complete reversible diff' }
   }
   const undone = transformFile(text, file, 'undo')
@@ -190,7 +184,7 @@ function inspectText(text: string, file: FileReviewChange): InspectedFile {
 }
 
 async function inspectOne(cwd: string, file: FileReviewChange): Promise<FileReviewFileResult> {
-  if (file.diffs.length === 0 || !file.diffs.every(diff => hunkSupported(diff, file.path))) {
+  if (!changeReversible(file.path, file.diffs)) {
     return {
       path: file.path,
       state: 'unsupported',
@@ -217,7 +211,7 @@ async function applyOne(
   file: FileReviewChange,
   action: FileReviewAction,
 ): Promise<FileReviewFileResult> {
-  if (file.diffs.length === 0 || !file.diffs.every(diff => hunkSupported(diff, file.path))) {
+  if (!changeReversible(file.path, file.diffs)) {
     return {
       path: file.path,
       state: 'unsupported',

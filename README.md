@@ -1,8 +1,8 @@
 # dsh-file-review-tab
 
-> **前置依赖**：DeepSeek Harness web（**0.2.0-rc.2+**，已在 0.2.0-rc.2 上真机验证）+ [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)（≥ 0.19.1，已在 0.24.1 上验证）。仍停留在低版本 DSH 的用户请按 [版本对应](#版本对应) 选择插件版本。
+> **前置依赖**：DeepSeek Harness web（**0.2.2-rc.2+**，本仓库当前在 0.2.2-rc.5 上运行）+ [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)（≥ 0.19.1，已在 0.24.1 上验证）。仍停留在低版本 DSH 的用户请按 [版本对应](#版本对应) 选择插件版本。
 >
-> **Requirements**: DeepSeek Harness web (**0.2.0-rc.2+**, verified on 0.2.0-rc.2) + [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) (≥ 0.19.1, verified on 0.24.1). On an older DSH, pick the plugin version per [version mapping](#版本对应).
+> **Requirements**: DeepSeek Harness web (**0.2.2-rc.2+**, this checkout runs against 0.2.2-rc.5) + [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) (≥ 0.19.1, verified on 0.24.1). On an older DSH, pick the plugin version per [version mapping](#版本对应).
 
 把 [dsh-file-review](https://github.com/left0ver/dsh-file-review)（作者 [left0ver](https://github.com/left0ver)）的"改动审查"能力移植为 [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) 的侧边栏 Tab，并保留对话尾部的审查行——两个入口同源，互不干扰。
 
@@ -18,7 +18,7 @@
 
 | 项 | 上游 `dsh-file-review-tab@0.5.0` | 本 fork `@whybebabo/dsh-file-review-tab@0.7.2` |
 |---|---|---|
-| 目标 DSH | 0.1.5 | **0.2.0-rc.2** |
+| 目标 DSH | 0.1.5 | **0.2.2-rc.2** |
 | Typert 编解码 | 旧 `schema:` 形状（0.2.0 注册即抛错） | 严格 `TypertCodec.create()` 工厂 |
 | 对话尾部槽位 | `turnTail` 链式（`select` + `priority`，首个声明者胜） | `turnTail` **加法列表**（`id` + `order`，多入口共存） |
 | 尾部改动卡片 | 自定义卡片 | **原生 ui-deliverables 卡片同款外观** + 撤销/审查两个按钮 |
@@ -69,7 +69,7 @@ dsh plugin --profile web add dsh-file-review-tab@0.5.0
 
 ### 版本对应
 
-`@whybebabo/dsh-file-review-tab@0.7.x` 面向 DSH 0.2.0（服务端严格的 `TypertCodec.create()` 工厂 + `conversation.chat.turnTail` 加法列表槽 + 原生同款改动卡片），也是本 fork 唯一的 npm 发布版本；仍停留在 DSH 0.1.5 的用户请使用上游的 `dsh-file-review-tab@0.5.x`，DSH 0.1.2 / 0.1.1 请用上游 `0.4.1`。本 fork 未发布 `0.6.x`（其提交含在 0.7.0 历史中）。
+`@whybebabo/dsh-file-review-tab@0.7.x` 面向 DSH 0.2.2（服务端严格的 `TypertCodec.create()` 工厂 + `conversation.chat.turnTail` 加法列表槽 + 原生同款改动卡片），也是本 fork 唯一的 npm 发布版本；仍停留在 DSH 0.1.5 的用户请使用上游的 `dsh-file-review-tab@0.5.x`，DSH 0.1.2 / 0.1.1 请用上游 `0.4.1`。本 fork 未发布 `0.6.x`（其提交含在 0.7.0 历史中）。
 
 ## 致谢
 
@@ -87,7 +87,7 @@ Relative to upstream `main` (`1de22fc`, `0.5.0`), this fork differs in two ways:
 
 | | Upstream `dsh-file-review-tab@0.5.0` | This fork `@whybebabo/dsh-file-review-tab@0.7.2` |
 |---|---|---|
-| Target DSH | 0.1.5 | **0.2.0-rc.2** |
+| Target DSH | 0.1.5 | **0.2.2-rc.2** |
 | Typert codecs | legacy `schema:` shape (0.2.0 rejects it at registration) | strict `TypertCodec.create()` factories |
 | Turn-tail slot | `turnTail` chain (`select` + `priority`, first claim wins) | `turnTail` **additive list** (`id` + `order`, entries coexist) |
 | Turn-tail card | custom card | **native ui-deliverables look** + undo/review buttons |
@@ -111,7 +111,7 @@ Relative to upstream `main` (`1de22fc`, `0.5.0`), this fork differs in two ways:
 - Session-isolated, pause-when-hidden, CSS-Module scoped styling (no conflicts with the chat area or other plugins).
 - Narrow-pane adaptive: in half-width splits and floated free windows the turn header wraps and secondary content yields so undo and file names never clip.
 
-Requires DeepSeek Harness web (0.2.0-rc.2+, verified on 0.2.0-rc.2) and dsh-better-sidebar (≥ 0.19.1, verified on 0.24.1), the latter installed separately. Install this fork from npm (`dsh plugin --profile web add @whybebabo/dsh-file-review-tab`) or from this repo's GitHub source (`dsh plugin --profile web add github:whybebabo/dsh-file-review-tab`). `0.7.x` targets the DSH 0.2.0 client API (strict `TypertCodec.create()`, additive `turnTail` list slot, native-identical changes card) and is this fork's only npm release; the bare name `dsh-file-review-tab` on npm belongs to upstream and is still `0.5.0` for DSH 0.1.5, so installing the bare name does not get this fork's version. Users on DSH 0.1.5 should stay on upstream `0.5.x`, and DSH 0.1.2 / 0.1.1 on `0.4.1`. Restart `dsh web` after installing, then open the "File Review" tab from the sidebar's "+" menu. If a freshly published version is held back by pnpm's `minimumReleaseAge` (24 h default), pin it exactly: `@whybebabo/dsh-file-review-tab@0.7.2`.
+Requires DeepSeek Harness web (0.2.2-rc.2+, this checkout runs against 0.2.2-rc.5) and dsh-better-sidebar (≥ 0.19.1, verified on 0.24.1), the latter installed separately. Install this fork from npm (`dsh plugin --profile web add @whybebabo/dsh-file-review-tab`) or from this repo's GitHub source (`dsh plugin --profile web add github:whybebabo/dsh-file-review-tab`). `0.7.x` targets the DSH 0.2.2 client API (strict `TypertCodec.create()`, additive `turnTail` list slot, native-identical changes card) and is this fork's only npm release; the bare name `dsh-file-review-tab` on npm belongs to upstream and is still `0.5.0` for DSH 0.1.5, so installing the bare name does not get the fork's version. Users on DSH 0.1.5 should stay on upstream `0.5.x`, and DSH 0.1.2 / 0.1.1 on `0.4.1`. Restart `dsh web` after installing, then open the "File Review" tab from the sidebar's "+" menu. If a freshly published version is held back by pnpm's `minimumReleaseAge` (24 h default), pin it exactly: `@whybebabo/dsh-file-review-tab@0.7.2`.
 
 ## Development
 
@@ -122,16 +122,18 @@ pnpm build       # emits lib/ (host ESM + browser bundle + .d.ts)
 pnpm test        # runtime checks; rebuilds lib/ first via pretest
 ```
 
-`pnpm test` drives the built artifacts through the real DSH 0.2.0 registries rather than mocking them, so a breaking upstream API change fails here instead of in the UI. Several checks read `lib/`, so `test` runs `build` first as a `pretest` step: without it a `src/` edit could pass every check against the previous build. All fourteen checks assert behavior no typecheck can see:
+`pnpm test` drives the built artifacts through the real DSH registries rather than mocking them, so a breaking upstream API change fails here instead of in the UI. Several checks read `lib/`, so `test` runs `build` first as a `pretest` step: without it a `src/` edit could pass every check against the previous build. All sixteen test files assert behavior no typecheck can see:
 
 - `test/typert-descriptors.mjs` — registers the Host Typert contribution against the real registry and round-trips every codec (plus a control proving the pre-0.2.0 `schema:` codec shape is rejected).
 - `test/slot-registration.mjs` — registers the turn-tail entry against the real `SlotCore` (a list slot requires an `id`).
-- `test/host-apply.mjs` — runs the host half's `apply()` on a real cordis `Context` and drives the `tools/post-execute` recorder plus the `fileReview` Remote service.
+- `test/host-apply.mjs` — runs the host half's `apply()` on a real cordis `Context` and drives the `tools/post-execute` recorder plus the `fileReview` Remote service (and proves the host half no longer registers a competing system-prompt section).
+- `test/anchor-locate.mjs` — places a hunk whose coordinates were never recorded from its fragment text: unique match only, all-or-nothing per call, CRLF fragments against LF files.
 - `test/undo-redo.mjs` — drives the real `fileReview` service against a temp workspace and asserts an exact undo→redo round trip for multi-hunk and multi-mutation files, including a payload whose settlements arrive in the wrong array order.
 - `test/interleaved-mutations.mjs` — a turn whose changes arrive through BOTH channels (a `run_code` mutation recorded by the Host, plus a model-direct `edit`) stays in event order, so undo and redo both still round-trip; a deletion and a later recreation resolve by event order too (a recreated file is not left marked deleted); and the `recorded` fetch re-arm signal plus its throttle pacing are verified.
 - `test/review-invalidation.mjs` — session-scoped review-state invalidation and disposer behavior.
 - `test/deep-link.mjs` — resolves a chat→sidebar deep link, including into a turn hidden behind the auto-archive section.
-- `test/diff-hunks.mjs` — the shared diff core (`toNativeHunks`) invariants: numbering, sign prefixes, context trimming.
+- `test/diff-hunks.mjs` — the shared diff core (`toNativeHunks`) invariants: numbering, sign prefixes, context trimming, and the one reversibility rule both surfaces and the Host share.
+- `test/hunk-anchors.mjs` — the client anchor cache: claim-once dedup, release after a failed lookup, immutable lookups, per-session forget.
 - `test/mutation-order.mjs` — the per-settlement coordinate model that keeps multi-mutation hunks applicable, plus the event-sequence ordering that interleaves the two change channels.
 - `test/deleted-paths.mjs` — `rm`-family option parsing never reports an option or an option's value as a deleted path, and a quoted comma inside a filename is not split into two paths.
 - `test/client-bundle.mjs` — evaluates `lib/client.js` the way the Web plugin loader does and checks the `dsh.client` contract (`apply` export + `inject` list).

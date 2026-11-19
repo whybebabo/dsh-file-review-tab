@@ -548,5 +548,21 @@ check('never nests a button inside another button', () => {
   }
 })
 
+check('the file row discloses through a real button, not a role wrapper', () => {
+  const html = render([{ path: 'src/one.ts', oldText: 'const a = 1\n', newText: 'const a = 2\n' }])
+  // The row used to be a `role="button"` div CONTAINING the undo/editor
+  // buttons; its keydown handler called preventDefault(), which cancelled the
+  // inner buttons' Enter/Space activation. The disclosure is a real <button>
+  // now; the row is layout only.
+  if (html.includes('role="button"')) {
+    throw new Error('a review row still claims role=button')
+  }
+  const toggle = /<button[^>]*data-review-row-toggle=""[^>]*/.exec(html)
+  if (toggle === null) throw new Error('no row toggle button in the markup')
+  if (!toggle[0].includes('aria-expanded="false"')) {
+    throw new Error('the row toggle does not expose aria-expanded')
+  }
+})
+
 console.log(failures === 0 ? '\nALL TAB RENDER CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
 process.exitCode = failures === 0 ? 0 : 1

@@ -341,15 +341,34 @@
   align-items: center;
   gap: 8px;
   min-height: 30px;
-  padding: 0 8px 0 10px;
-  cursor: pointer;
+  padding: 0 8px 0 0;
 }
 
 .fileRow:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.fileRow:focus-visible {
+/* The disclosure is a REAL button (chevron + name + counts + state), so
+   Enter/Space and assistive tech treat it as the control it is. The row itself
+   is layout only — an interactive wrapper would swallow the nested action
+   buttons' own keyboard activation. */
+.rowToggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 0 0 10px;
+  border: 0;
+  background: 0 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.rowToggle:focus-visible {
   box-shadow: inset 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline: none;
 }
