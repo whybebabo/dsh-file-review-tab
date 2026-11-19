@@ -423,6 +423,32 @@ check('the empty-cell fill variable is declared on the element the renderer emit
   }
 })
 
+check('a split column does not swallow the vertical wheel', () => {
+  // The side-by-side columns scroll horizontally, and `overflow-x: scroll`
+  // computes `overflow-y: auto`, so each column IS a vertical scroll container.
+  // Native pairs that with the two-axis `overscroll-behavior: none` because its
+  // review pane bounds the comparison's height and the columns really do scroll
+  // vertically. An inline comparison (this plugin's tab list) is unbounded, so
+  // the columns have nothing to scroll while still being scroll containers —
+  // and a two-axis `none` then eats the wheel without scrolling anything: the
+  // sidebar's split, non-wrapped diff could not be scrolled at all. Only the x
+  // axis may be suppressed here, so a vertical wheel chains to the pane.
+  const column = source.match(/\.[\w$]+_column\{[^}]*\}/)
+  if (column === null) throw new Error('no .column rule in the bundle')
+  const rule = column[0]
+  if (/overscroll-behavior\s*:/.test(rule)) {
+    throw new Error(`the column sets the two-axis overscroll-behavior shorthand: ${rule}`)
+  }
+  if (!/overscroll-behavior-x\s*:\s*none/.test(rule)) {
+    throw new Error(`the column does not suppress horizontal overscroll: ${rule}`)
+  }
+  // And the horizontal scroller itself must survive: the columns are what
+  // scroll long lines, so dropping `overflow-x` would break that instead.
+  if (!/overflow-x\s*:\s*scroll/.test(rule)) {
+    throw new Error(`the column stopped being the horizontal scroller: ${rule}`)
+  }
+})
+
 check('the refresh tool has a visible running state and honors reduced motion', () => {
   // A refresh that looks identical while it runs reads as a dead button. Its
   // pending state is only reachable with a live Host round-trip (no effect runs

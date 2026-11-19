@@ -50,7 +50,19 @@
 .column {
   min-width: 0;
   overflow-x: scroll;
-  overscroll-behavior: none;
+  /* Native sets the two-axis `overscroll-behavior: none` here to suppress the
+     elastic bounce, and it is safe there because its review tab gives the
+     comparison a bounded height: the columns themselves become the vertical
+     scroller. An INLINE comparison (this plugin's tab list, and the card's
+     preview) is unbounded — its height follows the content — so the columns
+     never scroll vertically while still being scroll containers, because
+     `overflow-x: scroll` computes `overflow-y: auto`. With chaining suppressed
+     on BOTH axes that combination eats the wheel: a tall side-by-side diff in
+     the sidebar would not scroll at all, while the unified and wrapped layouts
+     (no columns) scrolled fine. Suppressing only x keeps native's horizontal
+     behaviour — no history swipe, no elastic drag on the columns — and lets a
+     vertical wheel chain to the pane that really scrolls. */
+  overscroll-behavior-x: none;
 }
 
 .column + .column {
