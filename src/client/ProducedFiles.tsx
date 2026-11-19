@@ -28,11 +28,12 @@ import {
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
-  FileReviewAction, FileReviewRequest, FileReviewResult,
+  FileReviewAction, FileReviewRequest, FileReviewResult, RecordedAnchor,
 } from '../change-types.ts'
 import { basename, selectProducedFiles, type ProducedFileReview } from './turn-deliverables.ts'
 import type { NS } from './chat-locales.ts'
 import { diffNote, summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
+import { useHunkAnchors } from './hunk-anchors.ts'
 import { NativeDiff } from './NativeDiff.tsx'
 import { subscribeFileReviewInvalidation } from './deep-link.ts'
 import css from './ProducedCard.module.css'
@@ -71,6 +72,15 @@ export type ProducedFilesProps = TurnTailOwnerProps & {
   reviewSessionId?: string | undefined
   inspectChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>
   applyChanges?: (request: FileReviewRequest) => Promise<FileReviewResult>
+  /**
+   * Fetch the Host-recorded line coordinates for the calls a preview draws.
+   *
+   * The card's own hunks come from the conversation snapshot, which carries
+   * context fragments without line numbers; these coordinates are what let the
+   * hover preview number them by the file's real lines. Absent (an older Host, or
+   * a session with no remote) the preview falls back to hunk-local numbering.
+   */
+  loadHunkAnchors?: ((callIds: readonly string[]) => Promise<readonly RecordedAnchor[]>) | undefined
   /**
    * Open the plugin's sidebar tab with the given paths pre-expanded
    * (the 审查 button passes every produced path; a file row passes its own).
@@ -217,14 +227,29 @@ function Counts({ stats, label }: { readonly stats: DiffStats; readonly label: s
 
 /** The hover preview: path label plus the same comparison the sidebar shows. */
 function ChangedFilePreview({
-  display, reviews, t,
+  display, reviews, reviewSessionId, loadHunkAnchors, t,
 }: {
   readonly display: string
   readonly reviews: readonly ProducedFileReview[]
+  readonly reviewSessionId?: string | undefined
+  readonly loadHunkAnchors?: ((callIds: readonly string[]) => Promise<readonly RecordedAnchor[]>) | undefined
   readonly t: ProducedFilesProps['t']
 }) {
   const diffs = reviews.flatMap(review => review.diffs)
-  const hunks = toNativeHunks(diffs, 2)
+  // The preview mounts on hover, so this is the first and only lookup for these
+  // calls: the numbers go from the fragment's own count to the file's real lines
+  // as soon as the Host answers (its answer is cached per session).
+  const callIds = useMemo(
+    () => diffs.flatMap(diff => (diff.callId === undefined ? [] : [diff.callId])),
+    [diffs],
+  )
+  const anchors = useHunkAnchors(
+    reviewSessionId ?? '',
+    callIds,
+    loadHunkAnchors,
+    reviewSessionId !== undefined && loadHunkAnchors !== undefined,
+  )
+  const hunks = toNativeHunks(diffs, 2, anchors)
   const note = diffNote(diffs, hunks, reviews.every(review => review.deleted === true))
   return (
     <div className={css.preview} data-changes-hover-preview="">
@@ -276,7 +301,7 @@ export function ProducedFiles(props: ProducedFilesProps) {
 function ProducedFilesCard({
   reviews, openFile, turn: turnLocation, projectRoot, reviewSessionId,
   inspectChanges = unavailableChanges, applyChanges = unavailableChanges,
-  openInSidebarTab, t,
+  loadHunkAnchors, openInSidebarTab, t,
 }: ProducedFilesProps & { readonly reviews: readonly ProducedFileReview[] }) {
   // The owning turn number (TurnLocation.turn) rides every deep link so the
   // sidebar tab expands this turn's rows only.
@@ -481,6 +506,8 @@ function ProducedFilesCard({
                   <ChangedFilePreview
                     display={displayPath(projectRoot, singleFile.review.path)}
                     reviews={[singleFile.review]}
+                    reviewSessionId={reviewSessionId}
+                    loadHunkAnchors={loadHunkAnchors}
                     t={t}
                   />
                 )}
@@ -522,6 +549,8 @@ function ProducedFilesCard({
                     <ChangedFilePreview
                       display={displayPath(projectRoot, review.path)}
                       reviews={[review]}
+                      reviewSessionId={reviewSessionId}
+                      loadHunkAnchors={loadHunkAnchors}
                       t={t}
                     />
                   )}

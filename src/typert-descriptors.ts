@@ -42,6 +42,11 @@ const diffSchema = z.object({
   mutation: z.number().int().min(0).optional(),
   /** Event sequence, so settlements merge in the order they happened. */
   seq: z.number().int().min(0).optional(),
+  /**
+   * The emitting call, carried so the renderer can pair this fragment with the
+   * coordinates the Host recorded for it. Ignored by the apply side.
+   */
+  callId: z.string().optional(),
 })
 
 const requestSchema = z.object({
@@ -87,6 +92,31 @@ const recordedRequestCodec = strictCodec(`${PACKAGE_NAME}#RecordedRequest`, () =
 
 const recordedResultCodec = strictCodec(`${PACKAGE_NAME}#RecordedResult`, () => recordedResultSchema)
 
+const hunkAnchorSchema = z.object({
+  // A pure insertion at the top of a new file reports oldStart 0, which is a
+  // coordinate, not a line: the old side simply has none.
+  oldStart: z.number().int().min(0),
+  newStart: z.number().int().min(1),
+})
+
+const recordedAnchorSchema = z.object({
+  callId: z.string(),
+  path: z.string(),
+  anchors: z.array(hunkAnchorSchema),
+})
+
+const anchorRequestSchema = z.object({
+  callIds: z.array(z.string()),
+})
+
+const anchorResultSchema = z.object({
+  anchors: z.array(recordedAnchorSchema),
+})
+
+const anchorRequestCodec = strictCodec(`${PACKAGE_NAME}#AnchorRequest`, () => anchorRequestSchema)
+
+const anchorResultCodec = strictCodec(`${PACKAGE_NAME}#AnchorResult`, () => anchorResultSchema)
+
 function descriptor(method: 'status' | 'apply'): InvocationDescriptor {
   return {
     id: `${PACKAGE_NAME}#fileReview/${method}`,
@@ -121,8 +151,26 @@ function recordedDescriptor(): InvocationDescriptor {
   }
 }
 
+function anchorsDescriptor(): InvocationDescriptor {
+  return {
+    id: `${PACKAGE_NAME}#fileReview/anchors`,
+    service: 'fileReview',
+    namespace: 'fileReview',
+    method: 'anchors',
+    invocation: { kind: 'direct' },
+    scope: { context: 'agent', wire: 'agentId' },
+    parameters: [{
+      name: 'agent', wire: 'agentId', source: 'lookup', lookup: 'agent', codec: agentCodec,
+    }, {
+      name: 'request', wire: 'request', source: 'json', codec: anchorRequestCodec,
+    }],
+    result: anchorResultCodec,
+  }
+}
+
 export const FILE_REVIEW_INVOCATIONS: readonly InvocationDescriptor[] = [
   descriptor('status'),
   descriptor('apply'),
   recordedDescriptor(),
+  anchorsDescriptor(),
 ]

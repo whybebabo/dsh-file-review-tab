@@ -49,6 +49,59 @@ export interface ProducedFileDiff {
    * Optional: when absent the order is not provable and the array order stands.
    */
   readonly seq?: number | undefined
+  /**
+   * The tool call this hunk came from (client-side bookkeeping).
+   *
+   * A hunk delivered on the wire carries only `oldText`/`newText` — the engine's
+   * `meta.diffs` are context-trimmed fragment pairs with no absolute line
+   * numbers, so numbering them from 1 is the only thing the payload alone
+   * allows. The Host recorder knows each mutation's real coordinates and
+   * publishes them under the call's id (see {@link RecordedAnchor}); this stamp
+   * is what pairs a fragment with them again. It never affects undo: the Host
+   * ignores it, and the coordinates that would make replacement stricter are
+   * deliberately NOT written into the hunk.
+   *
+   * Optional: recorded (Code Mode) hunks already carry their own coordinates,
+   * and a snapshot that lost the call id keeps the fragment numbering.
+   */
+  readonly callId?: string | undefined
+}
+
+/** Absolute line coordinates of one hunk, as the engine's patch reports them. */
+export interface HunkAnchor {
+  /** First line of the hunk on the old side (0 for a pure insertion at the top). */
+  readonly oldStart: number
+  /** First line of the hunk on the new side. */
+  readonly newStart: number
+}
+
+/**
+ * One settled mutation's hunk coordinates, in the order the engine reported its
+ * hunks.
+ *
+ * The Host records these for EVERY file mutation, model-direct calls included:
+ * it sees the mutation's full before/after text at settlement, which is the one
+ * place the absolute line numbers still exist. The count is expected to match
+ * the number of `meta.diffs` fragments the conversation snapshot carries for the
+ * same call — both are the same first-lines-of-hunk patch over the same texts —
+ * so the client may pair them positionally, and must refuse to when they differ.
+ */
+export interface RecordedAnchor {
+  /** The mutation's tool call id, matching the hunk's {@link ProducedFileDiff.callId}. */
+  readonly callId: string
+  /** Path the mutation wrote, echoed back so a client can sanity-check the pairing. */
+  readonly path: string
+  readonly anchors: readonly HunkAnchor[]
+}
+
+/** Host request: the mutation calls whose hunk coordinates are wanted. */
+export interface AnchorRequest {
+  readonly callIds: readonly string[]
+}
+
+/** Host response: coordinates for the requested calls it could record. */
+export interface AnchorResult {
+  readonly anchors: readonly RecordedAnchor[]
 }
 
 /** One produced file and the applied hunks available for review. */

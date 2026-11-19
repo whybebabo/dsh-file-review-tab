@@ -13,7 +13,7 @@
  */
 
 import { diffArrays } from 'diff'
-import type { ProducedFileDiff } from '../change-types.ts'
+import type { HunkAnchor, ProducedFileDiff } from '../change-types.ts'
 import { diffContentLines } from './diff-text.ts'
 
 /** How one drawn line relates to the two sides of the comparison. */
@@ -55,14 +55,22 @@ export function isOneSided(hunks: readonly NativeDiffHunk[]): boolean {
   return adds !== dels
 }
 
-/** Pair one recorded before/after snapshot into numbered lines. */
-export function pairLines(diff: ProducedFileDiff): DiffLine[] {
+/**
+ * Pair one recorded before/after snapshot into numbered lines.
+ *
+ * `anchor` overrides where the pairing starts. The wire hunks the conversation
+ * snapshot carries are context fragments with no line numbers at all, so without
+ * an anchor their numbering can only start at 1 — a per-hunk counter, not the
+ * file's lines. The Host knows each mutation's real coordinates (see
+ * {@link HunkAnchor}) and this is where they enter the drawing.
+ */
+export function pairLines(diff: ProducedFileDiff, anchor?: HunkAnchor | undefined): DiffLine[] {
   const oldLines = diff.oldText === null ? [] : diffContentLines(diff.oldText)
   const newLines = diffContentLines(diff.newText)
   const changes = diffArrays(oldLines, newLines)
   const lines: DiffLine[] = []
-  let oldNumber = diff.oldStart ?? 1
-  let newNumber = diff.newStart ?? 1
+  let oldNumber = anchor?.oldStart ?? diff.oldStart ?? 1
+  let newNumber = anchor?.newStart ?? diff.newStart ?? 1
 
   for (const change of changes) {
     if (change.removed) {
@@ -195,14 +203,18 @@ function startOf(
 }
 
 /** Convert one paired comparison into the hunks dsh's FileDiff renders. */
-function comparisonToHunks(diff: ProducedFileDiff, contextLines: number): NativeDiffHunk[] {
-  const lines = pairLines(diff)
+function comparisonToHunks(
+  diff: ProducedFileDiff,
+  contextLines: number,
+  anchor?: HunkAnchor | undefined,
+): NativeDiffHunk[] {
+  const lines = pairLines(diff, anchor)
   return contextRanges(lines, contextLines).map((range) => {
     const kept = lines.slice(range.start, range.end)
     return {
-      oldStart: startOf(lines, range, 'oldNumber', diff.oldStart ?? 1),
+      oldStart: startOf(lines, range, 'oldNumber', anchor?.oldStart ?? diff.oldStart ?? 1),
       oldLines: kept.filter(line => line.oldNumber !== null).length,
-      newStart: startOf(lines, range, 'newNumber', diff.newStart ?? 1),
+      newStart: startOf(lines, range, 'newNumber', anchor?.newStart ?? diff.newStart ?? 1),
       newLines: kept.filter(line => line.newNumber !== null).length,
       // Native derives line text by dropping the leading sign character.
       lines: kept.map((line) => {
@@ -213,17 +225,58 @@ function comparisonToHunks(diff: ProducedFileDiff, contextLines: number): Native
   })
 }
 
+/** Recorded coordinates by the call that applied them. */
+export type HunkAnchorLookup = ReadonlyMap<string, readonly HunkAnchor[]>
+
+/**
+ * Pair every hunk with the coordinates recorded for its call.
+ *
+ * A call's fragments are consecutive in `diffs` and were produced by the same
+ * patch the anchors come from, so they map positionally. That mapping is only
+ * trustworthy when the two counts agree: a mismatch means the anchor list
+ * describes a different patch, and using it anyway would shift every number in
+ * the file instead of merely leaving them hunk-local. Such a call is refused
+ * outright rather than partially applied.
+ * @param diffs - the file's hunks, in settlement order.
+ * @param lookup - recorded coordinates by call id, or undefined when none loaded.
+ * @returns one optional anchor per hunk, aligned with `diffs`.
+ */
+function anchorPlan(
+  diffs: readonly ProducedFileDiff[],
+  lookup: HunkAnchorLookup | undefined,
+): (HunkAnchor | undefined)[] {
+  if (lookup === undefined || lookup.size === 0) return diffs.map(() => undefined)
+  const totals = new Map<string, number>()
+  for (const diff of diffs) {
+    if (diff.callId === undefined) continue
+    totals.set(diff.callId, (totals.get(diff.callId) ?? 0) + 1)
+  }
+  const seen = new Map<string, number>()
+  return diffs.map((diff) => {
+    const callId = diff.callId
+    if (callId === undefined) return undefined
+    const list = lookup.get(callId)
+    if (list === undefined || list.length !== totals.get(callId)) return undefined
+    const at = seen.get(callId) ?? 0
+    seen.set(callId, at + 1)
+    return list[at]
+  })
+}
+
 /**
  * Convert recorded comparisons into dsh's served hunk shape.
  * @param diffs - the recorded before/after snapshots for one file.
  * @param contextLines - unchanged lines kept on each side of a change.
+ * @param anchors - recorded absolute coordinates by call id, when known.
  * @returns the hunks to render, in order.
  */
 export function toNativeHunks(
   diffs: readonly ProducedFileDiff[],
   contextLines = 3,
+  anchors?: HunkAnchorLookup | undefined,
 ): NativeDiffHunk[] {
-  return diffs.flatMap(diff => comparisonToHunks(diff, contextLines))
+  const plan = anchorPlan(diffs, anchors)
+  return diffs.flatMap((diff, at) => comparisonToHunks(diff, contextLines, plan[at]))
 }
 
 /** Serialize recorded hunks as one plain-text unified diff. */

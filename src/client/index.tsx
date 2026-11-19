@@ -30,7 +30,9 @@ import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversati
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { TabDescriptor } from 'dsh-better-sidebar/client/service'
-import type { FileReviewRequest, FileReviewResult } from '../change-types.ts'
+import type {
+  AnchorRequest, AnchorResult, FileReviewRequest, FileReviewResult, RecordedAnchor,
+} from '../change-types.ts'
 import { TYPERT_REMOTE } from '../remote.ts'
 import { FileReviewTab } from './FileReviewTab.tsx'
 import { ProducedFiles } from './ProducedFiles.tsx'
@@ -94,6 +96,7 @@ function FileReviewIcon({ size }: { readonly size: number }) {
 interface FileReviewRemote {
   status(request: FileReviewRequest): Promise<RemoteResult<FileReviewResult>>
   apply(request: FileReviewRequest): Promise<RemoteResult<FileReviewResult>>
+  anchors(request: AnchorRequest): Promise<RemoteResult<AnchorResult>>
 }
 
 /**
@@ -223,6 +226,23 @@ export function apply(ctx: Context): void {
           if (!result.ok) throw new Error(result.error.message)
           return result.value
         }
+        /**
+         * Line coordinates for the calls the card's hover preview draws. The
+         * conversation snapshot only carries context fragments, so without these
+         * the preview would number every hunk from 1.
+         */
+        const loadHunkAnchors = async (callIds: readonly string[]): Promise<readonly RecordedAnchor[]> => {
+          const scope = sessions.scope(sessionId as SessionId)
+          const fileReview = scope?.get('remote.fileReview') as FileReviewRemote | undefined
+          // Thrown rather than returned empty: an unmounted Remote is not an
+          // answer about these calls, and the caller retries a failed lookup.
+          if (scope === undefined || fileReview === undefined) {
+            throw new Error('File review Remote is unavailable')
+          }
+          const result = await fileReview.anchors({ callIds })
+          if (!result.ok) throw new Error(result.error.message)
+          return result.value.anchors
+        }
         return {
           projectRoot,
           reviewSessionId: sessionId,
@@ -232,6 +252,7 @@ export function apply(ctx: Context): void {
             publishFileReviewInvalidation(sessionId)
             return result
           },
+          loadHunkAnchors,
           // 审查 button / per-file chip: publish the target through the
           // plugin's own seed channel, then open (or focus) the sidebar tab by
           // type. better-sidebar 0.19.1 mints native tab ids itself and cannot

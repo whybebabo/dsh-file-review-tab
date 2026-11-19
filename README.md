@@ -8,15 +8,15 @@
 
 > Port of [left0ver/dsh-file-review](https://github.com/left0ver/dsh-file-review)'s change-review capability into a [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) sidebar tab, keeping the chat turn-tail review row.
 
-> **镜像说明**：本仓库（[whybebabo/dsh-file-review-tab](https://github.com/whybebabo/dsh-file-review-tab)）是 [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) 的 **fork 镜像**，保留其完整提交历史与原插件名（未改名）。基线 commit 为 `1de22fc`（上游 `main` 头部，版本 `0.5.0`，面向 DSH 0.1.5）；本仓库在其之上带有 21 个提交（面向 DSH 0.2.0），并以 **`@whybebabo/dsh-file-review-tab`** 发布到 npm。**npm 上的裸名 `dsh-file-review-tab` 由上游作者持有**（维护者 `phynez_1103`，最高 `0.5.0`），本仓库无权也未曾发布到该名下——因此想装本仓库版本必须使用带 scope 的包名，见 [安装](#安装)。上游若更新，其 `main` 与裸名 npm 包仍应视为权威。
+> **镜像说明**：本仓库（[whybebabo/dsh-file-review-tab](https://github.com/whybebabo/dsh-file-review-tab)）是 [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) 的 **fork 镜像**，保留其完整提交历史与原插件名（未改名）。基线 commit 为 `1de22fc`（上游 `main` 头部，版本 `0.5.0`，面向 DSH 0.1.5）；本仓库在其之上带有 23 个提交（面向 DSH 0.2.0），并以 **`@whybebabo/dsh-file-review-tab`** 发布到 npm。**npm 上的裸名 `dsh-file-review-tab` 由上游作者持有**（维护者 `phynez_1103`，最高 `0.5.0`），本仓库无权也未曾发布到该名下——因此想装本仓库版本必须使用带 scope 的包名，见 [安装](#安装)。上游若更新，其 `main` 与裸名 npm 包仍应视为权威。
 >
-> **Mirror notice**: this repository ([whybebabo/dsh-file-review-tab](https://github.com/whybebabo/dsh-file-review-tab)) is a **fork** of [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) with the same commit history and the same plugin name (no rename). Its baseline commit is `1de22fc` (upstream `main` head, version `0.5.0`, targeting DSH 0.1.5); this fork carries 21 further commits (targeting DSH 0.2.0) and publishes to npm as **`@whybebabo/dsh-file-review-tab`**. The **bare npm name `dsh-file-review-tab` is owned by upstream** (maintainer `phynez_1103`, highest `0.5.0`), so a fork release must use the scoped name — see [Install](#安装). Treat upstream's `main` and its bare-name npm package as canonical.
+> **Mirror notice**: this repository ([whybebabo/dsh-file-review-tab](https://github.com/whybebabo/dsh-file-review-tab)) is a **fork** of [Lzh3070/dsh-file-review-tab](https://github.com/Lzh3070/dsh-file-review-tab) with the same commit history and the same plugin name (no rename). Its baseline commit is `1de22fc` (upstream `main` head, version `0.5.0`, targeting DSH 0.1.5); this fork carries 23 further commits (targeting DSH 0.2.0) and publishes to npm as **`@whybebabo/dsh-file-review-tab`**. The **bare npm name `dsh-file-review-tab` is owned by upstream** (maintainer `phynez_1103`, highest `0.5.0`), so a fork release must use the scoped name — see [Install](#安装). Treat upstream's `main` and its bare-name npm package as canonical.
 
 ## 与上游的差异
 
 本 fork 相对上游 `main`（`1de22fc`，`0.5.0`）的差异集中在"面向 DSH 0.2.0 的适配"与"本 fork 自己的发布决策"两类：
 
-| 项 | 上游 `dsh-file-review-tab@0.5.0` | 本 fork `@whybebabo/dsh-file-review-tab@0.7.1` |
+| 项 | 上游 `dsh-file-review-tab@0.5.0` | 本 fork `@whybebabo/dsh-file-review-tab@0.7.2` |
 |---|---|---|
 | 目标 DSH | 0.1.5 | **0.2.0-rc.2** |
 | Typert 编解码 | 旧 `schema:` 形状（0.2.0 注册即抛错） | 严格 `TypertCodec.create()` 工厂 |
@@ -24,6 +24,7 @@
 | 尾部改动卡片 | 自定义卡片 | **原生 ui-deliverables 卡片同款外观** + 撤销/审查两个按钮 |
 | 侧边栏 Tab 表头 | 自定义 | 原生 38px 对照条 + 分栏/换行/刷新工具行（各带 500ms 提示） |
 | 自动归档 | 无 | 主列表保留最近 5 轮，更早轮次折叠分页（每页 10 轮） |
+| Diff 行号 | 每个 hunk 从 1 计数 | **文件真实行号**（Host 落定时记录坐标） |
 | 删除文件可见 | 无 | 解析 `rm` 族命令字面路径，标记「已删除」 |
 | Code Mode（PTC） | 无 | `run_code` 子调用被捕获并入所属轮次 |
 | npm 包名 | `dsh-file-review-tab` | **`@whybebabo/dsh-file-review-tab`**（裸名由上游持有） |
@@ -35,6 +36,7 @@
 
 - **对话尾部审查行（与原生同款外观）**：回合结束出现「已编辑 N 个文件 +M −K」卡片，其外观**逐像素对齐 DSH 内置的 ui-deliverables 改动卡片**——同一个 60px 头部、40px 文件类型图标块、13px 标题、悬停时 `+N −K` 让位给「在侧边栏预览」、等宽字体文件行、超过 4 行折叠为「全部 N 个文件」，并同样复用官方的 `FileTypeIcon` / `HoverCard` / 折叠箭头。差异只有一处：**头部右上角多出「撤销（撤销后可点「重新应用」）与「审查」两个按钮**——内置卡片标题栏没有任何插槽，所以本插件自渲染同款卡片以容纳这两个按钮。鼠标悬停 500ms 即弹出该文件的 diff 预览；点「审查」或单个文件名，**深链打开侧边栏 Tab，自动展开对应文件的 diff 并定位到该轮分组顶部**（不再弹全宽 drawer）。
 - **侧边栏 Tab「文件审查」**：按轮次分组列出本会话改动文件；点击展开行级红绿 diff；支持撤销本轮 / 单文件撤销 / 重新应用；Tab 角标实时显示改动文件数。表头是与原生同款的 38px 对照条（文件选择器 + 统计），工具行提供「分栏 / 换行 / 刷新」三个可切换/可用的控件，每个都带 500ms 提示气泡。
+- **真实文件行号**：diff 左侧的行号是**文件里的实际行号**（`@@ -a,b +c,d @@` 也一致），不是每个 hunk 从 1 开始的序号。会话快照里的 hunks 是引擎裁剪过的上下文片段，本身不带行号；插件在 Host 端于每次文件写入落定时记录它的行坐标（`edit` / `write` / `str_replace_editor`、Code Mode 子调用、对话尾部预览与侧边栏 Tab 一致），浏览器端再按调用 id 把片段对回去。Host 记不到的调用（例如终端命令改的文件）自动退回逐 hunk 计数，diff 本身不受影响。
 - **删除文件可见**：dsh 没有删除文件的工具，删除发生在终端命令里——插件解析 `rm` 族命令（`rm` / `rmdir` / `unlink` / `shred` / `trash` / `Remove-Item` / `del` / `rd` / `erase` 等）的字面路径参数，被删文件以「已删除」标记出现在两个入口（内容已不存在，故无行级 diff、不可撤销）。带通配符（`rm *.log`）或命令替换（`rm $(...)`）的删除不识别——受影响文件事后无法枚举。
 - **自动归档**：主列表只保留最近 5 轮（进行中的轮次永不归档），更早的已完成轮次沉入底部「已归档 N 轮」折叠区。折叠时归档内容零渲染，展开后每页加载 10 轮（「加载更多」续页），diff 行另有懒挂载——长会话不再一次性挂载几十个 diff 组。深链跳到已归档轮次会自动展开并定位；展开状态按会话记忆；角标只统计主列表。
 - **PTC / Code Mode 支持**：`run_code` 程序内部的 `edit`/`write` 子调用也会被捕获——Host 端快照完整 before/after，浏览器端重建带行号的行级 hunks 并入所属轮次；diff 查看、状态检查、撤销/重做均可用。标准模式行为不变（对话尾部审查行仍只覆盖标准模式轮次）。
@@ -57,13 +59,13 @@ dsh plugin --profile web add github:whybebabo/dsh-file-review-tab
 dsh plugin --profile web add dsh-file-review-tab@0.5.0
 ```
 
-> ⚠️ 裸名 `dsh-file-review-tab` 在 npm 上由**上游作者**持有。`dsh plugin --profile web add dsh-file-review-tab` 装到的是上游 `0.5.0`（DSH 0.1.5），**不是**本仓库的 `0.7.1`——要装本 fork 的版本必须用上面的 scoped 名或 GitHub 源。
+> ⚠️ 裸名 `dsh-file-review-tab` 在 npm 上由**上游作者**持有。`dsh plugin --profile web add dsh-file-review-tab` 装到的是上游 `0.5.0`（DSH 0.1.5），**不是**本仓库的 `0.7.2`——要装本 fork 的版本必须用上面的 scoped 名或 GitHub 源。
 
 `dsh plugin` 会把参数转发给 profile 目录下的 pnpm，所以 `github:owner/repo` 这类 pnpm 支持的源都可用。
 
 装好后**重启 `dsh web`**，在 better-sidebar 侧边栏「+」菜单打开「文件审查」即可。`dsh-better-sidebar` 是前置依赖、不会随本插件自动装上，需另行安装（`dsh plugin --profile web add dsh-better-sidebar`）。
 
-> 刚发布的版本首次安装可能被 pnpm 的 `minimumReleaseAge`（默认 24 小时）挡下——用**精确版本**可绕过：`dsh plugin --profile web add @whybebabo/dsh-file-review-tab@0.7.1`。
+> 刚发布的版本首次安装可能被 pnpm 的 `minimumReleaseAge`（默认 24 小时）挡下——用**精确版本**可绕过：`dsh plugin --profile web add @whybebabo/dsh-file-review-tab@0.7.2`。
 
 ### 版本对应
 
@@ -83,7 +85,7 @@ dsh plugin --profile web add dsh-file-review-tab@0.5.0
 
 Relative to upstream `main` (`1de22fc`, `0.5.0`), this fork differs in two ways: DSH 0.2.0 adaptation, and this fork's own publishing decision.
 
-| | Upstream `dsh-file-review-tab@0.5.0` | This fork `@whybebabo/dsh-file-review-tab@0.7.1` |
+| | Upstream `dsh-file-review-tab@0.5.0` | This fork `@whybebabo/dsh-file-review-tab@0.7.2` |
 |---|---|---|
 | Target DSH | 0.1.5 | **0.2.0-rc.2** |
 | Typert codecs | legacy `schema:` shape (0.2.0 rejects it at registration) | strict `TypertCodec.create()` factories |
@@ -93,6 +95,7 @@ Relative to upstream `main` (`1de22fc`, `0.5.0`), this fork differs in two ways:
 | Auto-archive | none | newest 5 turns inline; older turns fold into a paged section (10/page) |
 | Deleted files | not surfaced | literal `rm`-family paths marked "deleted" |
 | Code Mode (PTC) | none | `run_code` sub-calls recorded into their owning turn |
+| Diff line numbers | per-hunk, counted from 1 | **the file's real lines**, from Host-recorded coordinates |
 | npm name | `dsh-file-review-tab` | **`@whybebabo/dsh-file-review-tab`** (bare name held by upstream) |
 
 **Do not install both.** Each registers the same `turnTail` slot and disables the built-in `ui-deliverables` row, so installing both yields a duplicated card.
@@ -101,13 +104,14 @@ Relative to upstream `main` (`1de22fc`, `0.5.0`), this fork differs in two ways:
 
 - Chat turn-tail review row that mirrors the built-in ui-deliverables changes card (same 60px header, file-type tile, hover preview, 4-row fold with "All N files") and adds the two buttons the built-in header cannot host: undo/reapply and review. It deep-links into the sidebar tab (auto-expanding the diffs and scrolling the turn group to the top) instead of a full-width drawer.
 - Sidebar tab "File Review" in dsh-better-sidebar: per-turn grouped changed files, line-level red/green diffs, undo per turn or per file, live badge with the changed-file count. Its header is the native 38px comparison bar (file selector + counts) with a split / wrap / refresh tool row, each control carrying a 500ms tooltip.
+- Real file line numbers: the gutter shows the line's actual position in the file (and so does the `@@ -a,b +c,d @@` banner), not a per-hunk counter starting at 1. Snapshot hunks are engine-trimmed context fragments with no numbers in them, so the Host records each file mutation's real coordinates at settlement (`edit` / `write` / `str_replace_editor`, Code Mode sub-calls included) and the browser pairs the fragments back to them by call id — in the sidebar tab and the chat card's hover preview alike. A call the Host could not record (a file rewritten by a terminal command, say) falls back to hunk-local numbering; the diff itself is unaffected.
 - Deleted files stay visible: dsh has no delete-file tool, so deletions happen in terminal commands — literal `rm`-family arguments (`rm`, `rmdir`, `unlink`, `shred`, `trash`, `Remove-Item`, `del`, `rd`, `erase`, …) are parsed and deleted files appear marked "deleted" in both surfaces (no line diff, no undo: the content is gone). Glob/command-substitution deletions are not guessed.
 - Auto-archive: only the newest 5 turns stay in the main list (live turns never archive); older completed turns sink into an "Archived turns" section pinned to the tab's bottom. Collapsed it renders nothing; open, it loads 10 turns per page. Deep links auto-open and page to their target; the badge counts the main list only.
 - Code Mode (`run_code`) support: sub-calls dispatched inside a program are snapshotted host-side and rebuilt into numbered line-level hunks in their owning turn, so diff viewing, state checks and undo/reapply all work there too. Standard-mode behavior is unchanged.
 - Session-isolated, pause-when-hidden, CSS-Module scoped styling (no conflicts with the chat area or other plugins).
 - Narrow-pane adaptive: in half-width splits and floated free windows the turn header wraps and secondary content yields so undo and file names never clip.
 
-Requires DeepSeek Harness web (0.2.0-rc.2+, verified on 0.2.0-rc.2) and dsh-better-sidebar (≥ 0.19.1, verified on 0.24.1), the latter installed separately. Install this fork from npm (`dsh plugin --profile web add @whybebabo/dsh-file-review-tab`) or from this repo's GitHub source (`dsh plugin --profile web add github:whybebabo/dsh-file-review-tab`). `0.7.x` targets the DSH 0.2.0 client API (strict `TypertCodec.create()`, additive `turnTail` list slot, native-identical changes card) and is this fork's only npm release; the bare name `dsh-file-review-tab` on npm belongs to upstream and is still `0.5.0` for DSH 0.1.5, so installing the bare name does not get this fork's version. Users on DSH 0.1.5 should stay on upstream `0.5.x`, and DSH 0.1.2 / 0.1.1 on `0.4.1`. Restart `dsh web` after installing, then open the "File Review" tab from the sidebar's "+" menu. If a freshly published version is held back by pnpm's `minimumReleaseAge` (24 h default), pin it exactly: `@whybebabo/dsh-file-review-tab@0.7.1`.
+Requires DeepSeek Harness web (0.2.0-rc.2+, verified on 0.2.0-rc.2) and dsh-better-sidebar (≥ 0.19.1, verified on 0.24.1), the latter installed separately. Install this fork from npm (`dsh plugin --profile web add @whybebabo/dsh-file-review-tab`) or from this repo's GitHub source (`dsh plugin --profile web add github:whybebabo/dsh-file-review-tab`). `0.7.x` targets the DSH 0.2.0 client API (strict `TypertCodec.create()`, additive `turnTail` list slot, native-identical changes card) and is this fork's only npm release; the bare name `dsh-file-review-tab` on npm belongs to upstream and is still `0.5.0` for DSH 0.1.5, so installing the bare name does not get this fork's version. Users on DSH 0.1.5 should stay on upstream `0.5.x`, and DSH 0.1.2 / 0.1.1 on `0.4.1`. Restart `dsh web` after installing, then open the "File Review" tab from the sidebar's "+" menu. If a freshly published version is held back by pnpm's `minimumReleaseAge` (24 h default), pin it exactly: `@whybebabo/dsh-file-review-tab@0.7.2`.
 
 ## Development
 

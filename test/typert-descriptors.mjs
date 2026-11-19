@@ -110,6 +110,45 @@ check('RecordedRequest round-trips rootCallIds', () => {
   schema.parse({ rootCallIds: ['c1', 'c2'] })
 })
 
+check('AnchorResult round-trips recorded hunk coordinates', () => {
+  const schema = resultSchemaOf(`${PKG}#fileReview/anchors`)
+  schema.parse({
+    anchors: [{
+      callId: 'c1',
+      path: 'a.ts',
+      // oldStart 0 is a coordinate, not a line: an insertion at the top of a
+      // created file has no old side. The codec must not reject it.
+      anchors: [{ oldStart: 0, newStart: 1 }, { oldStart: 12, newStart: 14 }],
+    }],
+  })
+})
+
+check('AnchorRequest round-trips call ids, empty included', () => {
+  const schema = requestCodecOf(`${PKG}#fileReview/anchors`)
+  schema.parse({ callIds: ['c1', 'c2'] })
+  schema.parse({ callIds: [] })
+})
+
+check('the anchors endpoint is registered alongside the others', () => {
+  if (!byId.has(`${PKG}#fileReview/anchors`)) throw new Error('fileReview/anchors is not registered')
+  if (byId.size !== 4) throw new Error(`expected 4 invocations, got ${byId.size}`)
+})
+
+check('a review hunk may carry the call id that produced it', () => {
+  // The apply side must keep accepting a stamped hunk: the stamp rides the same
+  // payload the renderer used, and dropping it silently is acceptable but
+  // rejecting it would break every undo of a model-direct edit.
+  const schema = requestCodecOf(`${PKG}#fileReview/status`)
+  const parsed = schema.parse({
+    action: 'undo',
+    files: [{
+      path: 'src/a.ts',
+      diffs: [{ path: 'src/a.ts', oldText: 'a\n', newText: 'b\n', callId: 'call-1' }],
+    }],
+  })
+  if (parsed.files[0].diffs[0].callId !== 'call-1') throw new Error('the call id was dropped by the codec')
+})
+
 check('agent lookup codec accepts a session id string', () => {
   const codec = byId.get(`${PKG}#fileReview/status`)
     .parameters.find(p => p.wire === 'agentId').codec

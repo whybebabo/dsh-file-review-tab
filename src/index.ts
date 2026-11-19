@@ -9,6 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { FileReviewService } from './file-review-service.ts'
+import { hunkAnchors } from './hunk-anchors.ts'
 
 export type * from './change-types.ts'
 export { FileReviewService, transformFile } from './file-review-service.ts'
@@ -75,19 +76,34 @@ export function apply(ctx: Context): void {
       const next = nextRaw as PostExecuteNext
       const decision = await next()
       if (decision.kind !== 'accept') return decision
-      // Model-direct mutations are already reviewable through conversation views;
-      // only nested dispatches (run_code sub-calls) need host-side recording.
-      if (exec.parent === undefined || exec.agent === undefined) return decision
+      if (exec.agent === undefined) return decision
       const value = result.value
       if (typeof value !== 'object' || value === null || Array.isArray(value)) return decision
       const candidate = value as { path?: unknown; before?: unknown; after?: unknown }
       if (typeof candidate.path !== 'string' || typeof candidate.after !== 'string') return decision
       if (candidate.before !== null && typeof candidate.before !== 'string') return decision
+      const before = candidate.before ?? null
+      // EVERY mutation gets its hunk coordinates recorded, model-direct calls
+      // included: the conversation snapshot the review surfaces read only ever
+      // carries the engine's context fragments, which have no line numbers in
+      // them, so this hook is the last point where a hunk's absolute lines still
+      // exist. Recording it is what lets the tab and the chat preview number a
+      // change by the file's real lines instead of a per-hunk counter.
+      service.recordAnchors(exec.agent, {
+        callId: String(exec.callId),
+        path: candidate.path,
+        anchors: hunkAnchors(before, candidate.after),
+      })
+      // Model-direct mutations are already reviewable through conversation views;
+      // only nested dispatches (run_code sub-calls) also need the host-side
+      // before/after snapshot that the Code Mode review path rebuilds its hunks
+      // from.
+      if (exec.parent === undefined) return decision
       service.recordMutation(exec.agent, {
         rootCallId: String(exec.rootCallId ?? exec.callId),
         name: exec.name,
         path: candidate.path,
-        before: candidate.before ?? null,
+        before,
         after: candidate.after,
       })
       return decision

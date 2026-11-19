@@ -63,6 +63,29 @@ const edit = (oldText, newText, created = false) => [{
   ...(created ? { created: true } : {}),
 }]
 
+const { structuredPatch } = await import('diff')
+
+/**
+ * dsh-tool-fs's own `computeHunkDiffs`: one context fragment per hunk, 3 lines
+ * of context, and no line numbers in the payload. Reproduced here from the
+ * engine's source rather than reused from this plugin, so what the renderer is
+ * fed is the real wire shape and the anchor split is compared against the very
+ * patch it must match.
+ */
+const engineFragments = (before, after) => structuredPatch('', '', before, after, undefined, undefined, { context: 3 })
+  .hunks.map((hunk) => {
+    const oldLines = []
+    const newLines = []
+    for (const line of hunk.lines) {
+      if (line.startsWith('\\')) continue
+      const text = line.slice(1)
+      if (line.startsWith('-')) oldLines.push(text)
+      else if (line.startsWith('+')) newLines.push(text)
+      else { oldLines.push(text); newLines.push(text) }
+    }
+    return { oldLines, newLines }
+  })
+
 check('a one-line edit trims to a small hunk, not the whole file', () => {
   const before = Array.from({ length: 200 }, (_v, i) => `line ${i + 1}`).join('\n')
   const after = before.replace('line 100', 'line 100 changed')
@@ -185,6 +208,77 @@ check('multiple distant edits split into separate hunks', () => {
   assert(hunks.length === 2, `expected 2 hunks, got ${hunks.length}`)
 })
 
+// --- absolute line numbers -------------------------------------------------
+// A wire hunk is a context fragment with no line numbers in it, so the renderer
+// can only count from 1 unless the Host's recorded coordinates are supplied.
+// These pin the pairing rules: position within a call, refusal on a count
+// mismatch, and a fragment-only hunk keeping exactly its old behaviour.
+{
+  const { hunkAnchors } = await import('../src/hunk-anchors.ts').catch(() => ({}))
+
+  check('anchors number a fragment by the file lines it really sits on', () => {
+    // 20 unchanged lines, one replaced: the fragment is lines 17..23 of the file.
+    const before = Array.from({ length: 20 }, (_v, i) => `line ${i + 1}`)
+    const after = [...before]
+    after[19] = 'line 20 changed'
+    const oldText = before.slice(16).join('\n')
+    const newText = after.slice(16).join('\n')
+    const diff = { path: 'a.ts', oldText, newText, callId: 'call-1' }
+    const hunks = toNativeHunks([diff], 3, new Map([['call-1', [{ oldStart: 17, newStart: 17 }]]]))
+    assert(hunks[0].oldStart === 17, `hunk started at ${hunks[0].oldStart}, expected 17`)
+    const deleted = hunks[0].lines.findIndex(line => line.startsWith('-'))
+    assert(deleted === 3, `change sat at offset ${deleted}, expected 3`)
+  })
+
+  check('without an anchor the fragment keeps its hunk-local numbering', () => {
+    const before = Array.from({ length: 20 }, (_v, i) => `line ${i + 1}`)
+    const after = [...before]
+    after[19] = 'line 20 changed'
+    const diff = { path: 'a.ts', oldText: before.slice(16).join('\n'), newText: after.slice(16).join('\n'), callId: 'call-1' }
+    const hunks = toNativeHunks([diff], 3)
+    assert(hunks[0].oldStart === 1, `unanchored hunk started at ${hunks[0].oldStart}, expected 1`)
+  })
+
+  check('one anchor list feeds a call\'s fragments in order', () => {
+    // Two fragments from ONE call: the second must take the second anchor.
+    const diffs = [
+      { path: 'a.ts', oldText: 'a\nb\nc', newText: 'a\nB\nc', callId: 'call-9' },
+      { path: 'a.ts', oldText: 'd\ne\nf', newText: 'd\nE\nf', callId: 'call-9' },
+    ]
+    const anchors = new Map([['call-9', [{ oldStart: 11, newStart: 11 }, { oldStart: 41, newStart: 41 }]]])
+    const hunks = toNativeHunks(diffs, 3, anchors)
+    assert(hunks.length === 2, `expected 2 hunks, got ${hunks.length}`)
+    assert(hunks[1].oldStart === 41, `second hunk started at ${hunks[1].oldStart}, expected 41`)
+  })
+
+  check('a mismatched anchor count is refused, not applied', () => {
+    // Two anchors for one fragment means the list describes a different patch;
+    // using it would shift every number in the file instead of merely leaving
+    // them hunk-local, so the call falls back entirely.
+    const diff = { path: 'a.ts', oldText: 'x\ny', newText: 'x\nY', callId: 'call-2' }
+    const anchors = new Map([['call-2', [{ oldStart: 30, newStart: 30 }, { oldStart: 60, newStart: 60 }]]])
+    const hunks = toNativeHunks([diff], 3, anchors)
+    assert(hunks[0].oldStart === 1, `refused anchor still shifted the hunk to ${hunks[0].oldStart}`)
+  })
+
+  check('hunkAnchors splits hunks exactly as the engine\'s fragments do', () => {
+    // The Host computes coordinates with structuredPatch over before/after, and
+    // the engine derived the fragments the client holds the same way. If the
+    // split ever disagreed, the positional pairing above would be meaningless —
+    // so prove the two lengths agree on a multi-hunk file.
+    const before = Array.from({ length: 60 }, (_v, i) => `line ${i + 1}`).join('\n')
+    const after = before
+      .replace('line 5', 'line 5 x')
+      .replace('line 30', 'line 30 y')
+      .replace('line 55', 'line 55 z')
+    const fragments = engineFragments(before, after)
+    const anchors = hunkAnchors(before, after)
+    assert(anchors.length === fragments.length,
+      `anchors ${anchors.length} vs fragments ${fragments.length}`)
+    assert(anchors[0].newStart === 2, `first anchor started at ${anchors[0].newStart}, expected 2`)
+  })
+}
+
 // The provenance rule, exercised end to end through the modules that actually
 // produce these diffs — a unit test on diffNote alone would not catch a wrong
 // flag at the source, which is where the bug lived.
@@ -226,6 +320,52 @@ if (deriveSessionChanges !== undefined) {
       assert(result.note !== 'created', `${label} was labeled created (note=${result.note})`)
       assert(result.diffs.every(diff => diff.created !== true), `${label} set the creation flag`)
     }
+  })
+
+  // End to end over the model-direct path the reported bug came from: two
+  // engine fragments from two calls, the Host's coordinates for each call, and
+  // the renderer's pairing. The whole chain is exercised, because the anchor
+  // lookup only works if derivation stamps the call id it keys on.
+  check('a turn\'s model-direct edits are numbered by the file\'s own lines', async () => {
+    const { hunkAnchors } = await import('../src/hunk-anchors.ts')
+    const before = Array.from({ length: 40 }, (_v, i) => `line ${i + 1}`)
+    const step1 = [...before]
+    step1[4] = 'line 5 changed'
+    const step2 = [...step1]
+    step2[34] = 'line 35 changed'
+    const fragments = (from, to) => engineFragments(from.join('\n'), to.join('\n')).map(hunk => ({
+      path: 'a.ts', oldText: hunk.oldLines.join('\n'), newText: hunk.newLines.join('\n'),
+    }))
+    const settled = (seq, callId, oldString, newString, diffs) => ({
+      kind: 'tool-result', seq, isError: false, subCalls: [], callId,
+      call: { name: 'edit', argsRaw: JSON.stringify({ file_path: 'a.ts', old_string: oldString, new_string: newString }) },
+      meta: { diffs },
+    })
+    const snapshot = {
+      nodes: [
+        settled(1, 'call-1', 'line 5', 'line 5 changed', fragments(before, step1)),
+        settled(2, 'call-2', 'line 35', 'line 35 changed', fragments(step1, step2)),
+      ],
+      turnEnds: new Map([[1, 2]]),
+      partial: null,
+      runningCalls: [],
+    }
+    const file = deriveSessionChanges(snapshot).flatMap(turn => turn.files)[0]
+    assert(file !== undefined, 'the turn derived no file')
+    assert(file.diffs.every(diff => diff.callId !== undefined), 'a derived hunk lost its call id')
+
+    const anchors = new Map([
+      ['call-1', hunkAnchors(before.join('\n'), step1.join('\n'))],
+      ['call-2', hunkAnchors(step1.join('\n'), step2.join('\n'))],
+    ])
+    const anchored = toNativeHunks(file.diffs, 3, anchors)
+    const starts = anchored.map(hunk => hunk.oldStart).join(',')
+    assert(starts === '2,32', `anchored hunk starts were ${starts}, expected 2,32`)
+
+    // Without the coordinates the very same hunks still draw, just hunk-local —
+    // the fallback that keeps an old Host working.
+    const plain = toNativeHunks(file.diffs, 3).map(hunk => hunk.oldStart).join(',')
+    assert(plain === '1,1', `unanchored hunk starts were ${plain}, expected 1,1`)
   })
 
   check('the engine wire path decodes a null old side as a creation', () => {

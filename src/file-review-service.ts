@@ -8,8 +8,9 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { hunksForApply, mutationGroups, orderBySequence } from './mutation-order.ts'
 import type {
-  FileReviewAction, FileReviewChange, FileReviewFileResult, FileReviewRequest, FileReviewResult,
-  ProducedFileDiff, RecordedMutation, RecordedRequest, RecordedResult,
+  AnchorRequest, AnchorResult, FileReviewAction, FileReviewChange, FileReviewFileResult,
+  FileReviewRequest, FileReviewResult, ProducedFileDiff, RecordedAnchor, RecordedMutation,
+  RecordedRequest, RecordedResult,
 } from './change-types.ts'
 
 type InspectState = Exclude<FileReviewFileResult['state'], 'error'>
@@ -271,6 +272,15 @@ function sessionCwd(agent: Agent): string {
 /** Per-agent cap on recorded Code Mode mutations (oldest evicted first). */
 const RECORDED_PER_AGENT_CAP = 4000
 
+/**
+ * Per-agent cap on recorded hunk-coordinate sets (oldest evicted first).
+ *
+ * Kept separate from the Code Mode record log — and larger — because an anchor
+ * set is tiny (two integers per hunk, never file content) and every mutation has
+ * one, not just the programmatic ones.
+ */
+const ANCHORS_PER_AGENT_CAP = 8000
+
 function agentKey(agent: Agent): string {
   return String(agent.id)
 }
@@ -279,6 +289,16 @@ function agentKey(agent: Agent): string {
 export class FileReviewService extends TypertRemoteService {
   /** Per-agent record of Code Mode (`run_code`) file mutations, dispatch order. */
   private readonly recordLog = new Map<string, RecordedMutation[]>()
+
+  /**
+   * Per-agent map of call id to the hunk coordinates that call applied.
+   *
+   * Keyed by call id alone: a mutation call writes one path, so the id already
+   * names the settlement the anchors belong to. Re-recording an id replaces its
+   * entry (a replay never duplicates), and insertion order is what the cap
+   * evicts by.
+   */
+  private readonly anchorLog = new Map<string, Map<string, RecordedAnchor>>()
 
   constructor(ctx: Context) {
     super(ctx, 'fileReview')
@@ -296,6 +316,50 @@ export class FileReviewService extends TypertRemoteService {
     if (list.length > RECORDED_PER_AGENT_CAP) {
       list.splice(0, list.length - RECORDED_PER_AGENT_CAP)
     }
+  }
+
+  /**
+   * Record one mutation's hunk coordinates, model-direct calls included.
+   *
+   * Called from `tools/post-execute` for every settled file mutation — that hook
+   * is the last place the full before/after text exists, and therefore the only
+   * place a hunk's absolute line numbers can still be recovered once the engine
+   * has trimmed it down to context fragments.
+   * @param agent - the agent that ran the mutation.
+   * @param entry - the call id, path and per-hunk coordinates.
+   */
+  recordAnchors(agent: Agent, entry: RecordedAnchor): void {
+    const key = agentKey(agent)
+    let log = this.anchorLog.get(key)
+    if (log === undefined) {
+      log = new Map()
+      this.anchorLog.set(key, log)
+    }
+    log.delete(entry.callId)
+    log.set(entry.callId, entry)
+    if (log.size > ANCHORS_PER_AGENT_CAP) {
+      const oldest = log.keys().next()
+      if (!oldest.done) log.delete(oldest.value)
+    }
+  }
+
+  /**
+   * Coordinates for the requested mutation calls.
+   *
+   * A call the recorder never saw is simply absent from the response: the client
+   * keeps numbering that hunk's fragment from 1, exactly as it would without this
+   * channel, so a missing entry can only ever cost the improvement, never the
+   * diff itself.
+   */
+  async anchors(agent: Agent, request: AnchorRequest): Promise<AnchorResult> {
+    const log = this.anchorLog.get(agentKey(agent))
+    if (log === undefined || request.callIds.length === 0) return { anchors: [] }
+    const anchors: RecordedAnchor[] = []
+    for (const callId of request.callIds) {
+      const entry = log.get(callId)
+      if (entry !== undefined) anchors.push(entry)
+    }
+    return { anchors }
   }
 
   /** Return the recorded mutations for the requested `run_code` roots. */

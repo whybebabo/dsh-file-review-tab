@@ -104,8 +104,40 @@ await check('inject declares the systemPrompt service', () => {
 const emit = (exec, result, next = async () => ({ kind: 'accept' })) =>
   ctx.emit('tools/post-execute', exec, result, next)
 
-await check('recorder ignores a model-direct (non-nested) mutation', async () => {
-  await emit({ name: 'edit', callId: 'c1' }, { value: { path: 'a.ts', before: null, after: 'x' } })
+await check('recorder records line coordinates for a model-direct mutation', async () => {
+  // Model-direct calls used to be skipped entirely: their review hunks arrive
+  // through the conversation snapshot, which has no line numbers in it — so the
+  // renderer could only count each hunk from 1 ("line 1" for a change near the
+  // end of a file). This hook is the one place the mutation's real coordinates
+  // still exist, so EVERY mutation now contributes them, nested or not.
+  const before = Array.from({ length: 30 }, (_v, i) => `line ${i + 1}`).join('\n')
+  const after = before.replace('line 20', 'line 20 changed')
+  await emit({ name: 'edit', callId: 'c1', agent }, { value: { path: 'a.ts', before, after } })
+  const service = ctx.get('fileReview')
+  const result = await service.anchors(agent, { callIds: ['c1'] })
+  if (!Array.isArray(result?.anchors) || result.anchors.length !== 1) {
+    throw new Error(`expected 1 anchor entry, got ${JSON.stringify(result)}`)
+  }
+  const [entry] = result.anchors
+  if (entry.path !== 'a.ts') throw new Error(`unexpected path ${entry.path}`)
+  if (entry.anchors.length !== 1) throw new Error(`expected 1 hunk anchor, got ${entry.anchors.length}`)
+  if (entry.anchors[0].newStart !== 17) {
+    throw new Error(`hunk anchored at new line ${entry.anchors[0].newStart}, expected 17`)
+  }
+  // A model-direct mutation is reviewable through the snapshot alone, so it must
+  // still NOT land in the Code Mode record log.
+  const recordedResult = await service.recorded(agent, { rootCallIds: ['c1'] })
+  if (recordedResult.mutations.length !== 0) {
+    throw new Error(`a model-direct mutation entered the Code Mode log: ${JSON.stringify(recordedResult)}`)
+  }
+})
+
+await check('anchors() scopes results to the queried call ids', async () => {
+  const service = ctx.get('fileReview')
+  const result = await service.anchors(agent, { callIds: ['nope'] })
+  if (result.anchors.length !== 0) throw new Error(`expected 0, got ${result.anchors.length}`)
+  const empty = await service.anchors(agent, { callIds: [] })
+  if (empty.anchors.length !== 0) throw new Error('an empty request answered with entries')
 })
 
 await check('recorder tolerates malformed result payloads', async () => {
@@ -130,6 +162,11 @@ await check('recorder captures a well-formed nested mutation', async () => {
   const [mutation] = result.mutations
   if (mutation.path !== 'b.ts' || mutation.before !== 'old' || mutation.after !== 'new') {
     throw new Error(`unexpected mutation ${JSON.stringify(mutation)}`)
+  }
+  // A nested dispatch is a mutation like any other: it gets coordinates too.
+  const anchored = await service.anchors(agent, { callIds: ['c8'] })
+  if (anchored.anchors.length !== 1 || anchored.anchors[0].callId !== 'c8') {
+    throw new Error(`nested mutation lost its anchors: ${JSON.stringify(anchored)}`)
   }
 })
 

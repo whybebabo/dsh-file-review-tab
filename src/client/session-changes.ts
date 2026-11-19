@@ -107,6 +107,11 @@ function blockChanges(block: ToolCallBlock): readonly BlockChange[] {
         if (own.length > 0) diffs = own
       }
     }
+    // Stamp the emitting call on every hunk: the fragment itself has no line
+    // numbers, and this id is what pairs it with the coordinates the Host
+    // recorded for that call.
+    const callId = (block as { callId?: unknown }).callId
+    if (typeof callId === 'string') diffs = diffs.map(diff => ({ ...diff, callId }))
     if (diffs.length > 0) changes.push({ path: intent.path, diffs })
   }
   for (const path of intent.deletions) changes.push({ path, diffs: [], deleted: true })

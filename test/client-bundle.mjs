@@ -337,6 +337,22 @@ check('the recorded fetch clears its pending flag on every exit path', () => {
   }
 })
 
+check('both surfaces ask for the recorded line coordinates', () => {
+  // A wire hunk carries no line numbers, so the renderer can only count from 1.
+  // The chat card and the sidebar tab must BOTH reach the Host's anchors
+  // endpoint; losing either call silently reverts that surface to "line 1" for
+  // every hunk, which is exactly the reported defect.
+  const calls = [...source.matchAll(/\.anchors\(\{\s*callIds/g)].length
+  if (calls < 2) {
+    throw new Error(`the bundle calls remote.anchors ${calls}x; expected the tab and the card preview`)
+  }
+  // And the renderer must thread the lookup into the numbering, not just fetch it.
+  const numbering = [...source.matchAll(/toNativeHunks\([^)]*anchors\)/g)].length
+  if (numbering < 2) {
+    throw new Error(`toNativeHunks is handed the anchors ${numbering}x; expected both surfaces`)
+  }
+})
+
 check('the creation note is never inferred from a null old side', () => {
   // The bug this guards: `diffs.every(diff => diff.oldText === null)` labeled a
   // file "created in this turn" whenever the prior content was unknown. A null

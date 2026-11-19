@@ -197,10 +197,13 @@ export const deliverablesDefinition: ConversationNodeDefinition<DeliverablesStat
       const own = applied === null
         ? intent.diffs
         : applied.filter(diff => diff.path === intent.path)
+      const diffs = own.length > 0 ? own : intent.diffs
+      // The fragment carries no line numbers; this call id is what pairs it
+      // with the coordinates the Host recorded for the same mutation.
       additions.push({
         seq,
         path: intent.path,
-        diffs: own.length > 0 ? own : intent.diffs,
+        diffs: diffs.map(diff => ({ ...diff, callId: result.callId })),
       })
     }
     for (const path of intent.deletions) {

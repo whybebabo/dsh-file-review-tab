@@ -11,7 +11,7 @@
  * trimming context the same way, so a one-line edit in a long file renders as one
  * small hunk instead of the whole file.
  */
-import type { ProducedFileDiff } from '../change-types.ts';
+import type { HunkAnchor, ProducedFileDiff } from '../change-types.ts';
 /** How one drawn line relates to the two sides of the comparison. */
 export type DiffLineKind = 'context' | 'del' | 'add';
 /** One line of a comparison, already numbered against both sides. */
@@ -41,8 +41,16 @@ export interface NativeDiffHunk {
 }
 /** Whether a comparison touches only one side, which forces the unified view. */
 export declare function isOneSided(hunks: readonly NativeDiffHunk[]): boolean;
-/** Pair one recorded before/after snapshot into numbered lines. */
-export declare function pairLines(diff: ProducedFileDiff): DiffLine[];
+/**
+ * Pair one recorded before/after snapshot into numbered lines.
+ *
+ * `anchor` overrides where the pairing starts. The wire hunks the conversation
+ * snapshot carries are context fragments with no line numbers at all, so without
+ * an anchor their numbering can only start at 1 — a per-hunk counter, not the
+ * file's lines. The Host knows each mutation's real coordinates (see
+ * {@link HunkAnchor}) and this is where they enter the drawing.
+ */
+export declare function pairLines(diff: ProducedFileDiff, anchor?: HunkAnchor | undefined): DiffLine[];
 /** Count added and removed lines using the viewer's exact line-diff algorithm. */
 export declare function summarizeDiffs(diffs: readonly ProducedFileDiff[]): DiffStats;
 /**
@@ -74,13 +82,16 @@ export declare function diffNote(diffs: readonly ProducedFileDiff[], hunks: read
  * @returns the copy to show.
  */
 export declare function missingMessage(deleted: boolean, deletedHint: string, missing: string): string;
+/** Recorded coordinates by the call that applied them. */
+export type HunkAnchorLookup = ReadonlyMap<string, readonly HunkAnchor[]>;
 /**
  * Convert recorded comparisons into dsh's served hunk shape.
  * @param diffs - the recorded before/after snapshots for one file.
  * @param contextLines - unchanged lines kept on each side of a change.
+ * @param anchors - recorded absolute coordinates by call id, when known.
  * @returns the hunks to render, in order.
  */
-export declare function toNativeHunks(diffs: readonly ProducedFileDiff[], contextLines?: number): NativeDiffHunk[];
+export declare function toNativeHunks(diffs: readonly ProducedFileDiff[], contextLines?: number, anchors?: HunkAnchorLookup | undefined): NativeDiffHunk[];
 /** Serialize recorded hunks as one plain-text unified diff. */
 export declare function nativeDiffText(hunks: readonly NativeDiffHunk[]): string;
 //# sourceMappingURL=diff-hunks.d.ts.map

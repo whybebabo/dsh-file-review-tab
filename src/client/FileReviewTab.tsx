@@ -35,8 +35,8 @@ import {
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  FileReviewAction, FileReviewFileState, FileReviewRequest, FileReviewResult,
-  RecordedMutation, RecordedRequest, RecordedResult,
+  AnchorRequest, AnchorResult, FileReviewAction, FileReviewFileState, FileReviewRequest,
+  FileReviewResult, RecordedAnchor, RecordedMutation, RecordedRequest, RecordedResult,
 } from '../change-types.ts'
 import {
   ARCHIVE_PAGE_TURNS, basename, deriveSessionChanges, deriveSessionRoots,
@@ -44,6 +44,7 @@ import {
   type SessionFileChange, type TurnFileChanges,
 } from './session-changes.ts'
 import { diffNote, missingMessage, summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
+import { useHunkAnchors } from './hunk-anchors.ts'
 import { recordedFetchDelay } from './recorded-fetch.ts'
 import { NativeDiff, type NativeDiffLabels } from './NativeDiff.tsx'
 import { t } from './locales.ts'
@@ -81,6 +82,7 @@ interface FileReviewRemote {
   status(request: FileReviewRequest): Promise<RemoteResult<FileReviewResult>>
   apply(request: FileReviewRequest): Promise<RemoteResult<FileReviewResult>>
   recorded(request: RecordedRequest): Promise<RemoteResult<RecordedResult>>
+  anchors(request: AnchorRequest): Promise<RemoteResult<AnchorResult>>
 }
 
 /** Observable Conversation snapshot source (dsh 0.1.5 UiConversation binding). */
@@ -342,6 +344,33 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     () => mergeRecordedTurns(deriveSessionChanges(snapshot), roots, recorded),
     [snapshot, roots, recorded],
   )
+
+  // Real line numbers for hunks that arrived as context fragments: the snapshot
+  // carries no coordinates, so the Host's recorded per-call anchors are fetched
+  // here and threaded into the numbering. Only hunks whose call the recorder saw
+  // gain them; everything else keeps its hunk-local count (see `toNativeHunks`).
+  const anchorCallIds = useMemo(
+    () => turns.flatMap(turn => turn.files.flatMap(file =>
+      file.diffs.flatMap(diff => (diff.callId === undefined ? [] : [diff.callId])))),
+    [turns],
+  )
+  const loadHunkAnchors = useCallback(
+    async (callIds: readonly string[]): Promise<readonly RecordedAnchor[]> => {
+      const scope = sessions.scope(sessionId as SessionId)
+      const remote = scope?.get('remote.fileReview') as FileReviewRemote | undefined
+      // Thrown, not returned empty: a Remote that is not mounted yet says
+      // nothing about whether these calls have coordinates, and the hook treats
+      // a failed answer as retryable.
+      if (scope === undefined || remote === undefined) {
+        throw new Error('File review Remote is unavailable')
+      }
+      const result = await remote.anchors({ callIds })
+      if (!result.ok) throw new Error(result.error.message)
+      return result.value.anchors
+    },
+    [sessions, sessionId],
+  )
+  const anchors = useHunkAnchors(sessionId, anchorCallIds, loadHunkAnchors, visible)
   // Auto-archive: only the newest turns stay in the main list; older completed
   // turns collapse into the tab's bottom section, which renders nothing until
   // opened and then only ARCHIVE_PAGE_TURNS groups per loaded page — long
@@ -767,8 +796,9 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     const fileBusy = busyKey === key
     const stats = summarizeDiffs(file.diffs)
     // Built once and shared with the render; the renderer itself decides
-    // whether a one-sided change can use the side-by-side layout.
-    const hunks = isOpen ? toNativeHunks(file.diffs, 3) : []
+    // whether a one-sided change can use the side-by-side layout. The anchors
+    // are what turn fragment-relative counts into the file's own line numbers.
+    const hunks = isOpen ? toNativeHunks(file.diffs, 3, anchors) : []
     return (
       <li
         key={file.path}
