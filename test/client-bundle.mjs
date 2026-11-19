@@ -342,7 +342,7 @@ check('both surfaces ask for the recorded line coordinates', () => {
   // The chat card and the sidebar tab must BOTH reach the Host's anchors
   // endpoint; losing either call silently reverts that surface to "line 1" for
   // every hunk, which is exactly the reported defect.
-  const calls = [...source.matchAll(/\.anchors\(\{\s*callIds/g)].length
+  const calls = [...source.matchAll(/\.anchors\(\{\s*calls/g)].length
   if (calls < 2) {
     throw new Error(`the bundle calls remote.anchors ${calls}x; expected the tab and the card preview`)
   }

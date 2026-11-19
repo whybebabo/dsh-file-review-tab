@@ -96,10 +96,33 @@ export interface RecordedAnchor {
 
 /** Host request: the mutation calls whose hunk coordinates are wanted. */
 export interface AnchorRequest {
-  readonly callIds: readonly string[]
+  readonly calls: readonly AnchorCall[]
 }
 
-/** Host response: coordinates for the requested calls it could record. */
+/**
+ * One call's fragments, as the client holds them, sent so the Host can place
+ * them when it never recorded the mutation.
+ *
+ * The recorder only sees mutations that settle while the plugin is loaded, so a
+ * session reviewed after upgrading has hunks whose coordinates were never
+ * captured. Those fragments are still enough to place the hunk in the file as it
+ * stands, which is what a reviewer wants to see anyway — the Host is the only
+ * side that can read the file, so the client ships the text.
+ */
+export interface AnchorCall {
+  readonly callId: string
+  readonly path: string
+  /** The call's fragments, in the engine's hunk order. */
+  readonly hunks: readonly AnchorHunk[]
+}
+
+/** One fragment's two sides, exactly as the wire hunk carries them. */
+export interface AnchorHunk {
+  readonly oldText: string | null
+  readonly newText: string
+}
+
+/** Host response: coordinates for the requested calls it could resolve. */
 export interface AnchorResult {
   readonly anchors: readonly RecordedAnchor[]
 }

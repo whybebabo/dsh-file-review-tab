@@ -1,6 +1,6 @@
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client';
-import type { FileReviewRequest, FileReviewResult, RecordedAnchor } from '../change-types.ts';
+import type { AnchorCall, FileReviewRequest, FileReviewResult, RecordedAnchor } from '../change-types.ts';
 import type { NS } from './chat-locales.ts';
 /**
  * Turn-tail owner currency plus the opener and locale supplied by the slot.
@@ -25,7 +25,7 @@ export type ProducedFilesProps = TurnTailOwnerProps & {
      * hover preview number them by the file's real lines. Absent (an older Host, or
      * a session with no remote) the preview falls back to hunk-local numbering.
      */
-    loadHunkAnchors?: ((callIds: readonly string[]) => Promise<readonly RecordedAnchor[]>) | undefined;
+    loadHunkAnchors?: ((calls: readonly AnchorCall[]) => Promise<readonly RecordedAnchor[]>) | undefined;
     /**
      * Open the plugin's sidebar tab with the given paths pre-expanded
      * (the 审查 button passes every produced path; a file row passes its own).

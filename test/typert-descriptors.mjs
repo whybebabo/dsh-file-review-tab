@@ -123,10 +123,20 @@ check('AnchorResult round-trips recorded hunk coordinates', () => {
   })
 })
 
-check('AnchorRequest round-trips call ids, empty included', () => {
+check('AnchorRequest round-trips calls and their fragments', () => {
   const schema = requestCodecOf(`${PKG}#fileReview/anchors`)
-  schema.parse({ callIds: ['c1', 'c2'] })
-  schema.parse({ callIds: [] })
+  schema.parse({
+    calls: [{
+      callId: 'c1',
+      path: 'a.ts',
+      hunks: [
+        { oldText: 'a', newText: 'b' },
+        // A creation's old side is null on the wire, and the codec must keep it.
+        { oldText: null, newText: 'fresh' },
+      ],
+    }],
+  })
+  schema.parse({ calls: [] })
 })
 
 check('the anchors endpoint is registered alongside the others', () => {

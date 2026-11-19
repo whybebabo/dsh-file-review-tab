@@ -14,8 +14,20 @@
  * call the recorder never saw stays marked as asked — a session whose mutations
  * happened outside the tool pipeline must not turn every render into a request.
  */
-import type { RecordedAnchor } from '../change-types.ts';
+import type { AnchorCall, RecordedAnchor } from '../change-types.ts';
+import type { ProducedFileDiff } from '../change-types.ts';
 import type { HunkAnchorLookup } from './diff-hunks.ts';
+/**
+ * Group one file's hunks into the calls that produced them.
+ *
+ * Fragments of a call are consecutive and keep the engine's hunk order, so this
+ * both names the calls to ask about and supplies the text the Host needs to place
+ * a hunk whose coordinates were never recorded. Hunks without a call id (the
+ * recorded Code Mode path, which already carries coordinates) are skipped.
+ * @param diffs - the file's hunks, in settlement order.
+ * @returns one entry per call, in first-seen order.
+ */
+export declare function anchorCalls(diffs: readonly ProducedFileDiff[]): AnchorCall[];
 /**
  * Coordinates remembered for one session, as the lookup the renderer takes.
  * @param sessionId - the session whose anchors are wanted.

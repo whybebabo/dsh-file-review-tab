@@ -105,8 +105,19 @@ const recordedAnchorSchema = z.object({
   anchors: z.array(hunkAnchorSchema),
 })
 
+const anchorHunkSchema = z.object({
+  oldText: z.string().nullable(),
+  newText: z.string(),
+})
+
+const anchorCallSchema = z.object({
+  callId: z.string(),
+  path: z.string(),
+  hunks: z.array(anchorHunkSchema),
+})
+
 const anchorRequestSchema = z.object({
-  callIds: z.array(z.string()),
+  calls: z.array(anchorCallSchema),
 })
 
 const anchorResultSchema = z.object({

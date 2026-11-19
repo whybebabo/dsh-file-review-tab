@@ -114,7 +114,9 @@ await check('recorder records line coordinates for a model-direct mutation', asy
   const after = before.replace('line 20', 'line 20 changed')
   await emit({ name: 'edit', callId: 'c1', agent }, { value: { path: 'a.ts', before, after } })
   const service = ctx.get('fileReview')
-  const result = await service.anchors(agent, { callIds: ['c1'] })
+  const result = await service.anchors(agent, {
+    calls: [{ callId: 'c1', path: 'a.ts', hunks: [{ oldText: 'line 20', newText: 'line 20 changed' }] }],
+  })
   if (!Array.isArray(result?.anchors) || result.anchors.length !== 1) {
     throw new Error(`expected 1 anchor entry, got ${JSON.stringify(result)}`)
   }
@@ -132,11 +134,16 @@ await check('recorder records line coordinates for a model-direct mutation', asy
   }
 })
 
-await check('anchors() scopes results to the queried call ids', async () => {
+await check('anchors() omits a call it cannot resolve either way', async () => {
   const service = ctx.get('fileReview')
-  const result = await service.anchors(agent, { callIds: ['nope'] })
+  // No recording for this id, and the agent has no workspace to look in, so the
+  // locate fallback cannot answer: the call is simply absent and the client
+  // keeps its hunk-local numbering.
+  const result = await service.anchors(agent, {
+    calls: [{ callId: 'nope', path: 'a.ts', hunks: [{ oldText: 'x', newText: 'y' }] }],
+  })
   if (result.anchors.length !== 0) throw new Error(`expected 0, got ${result.anchors.length}`)
-  const empty = await service.anchors(agent, { callIds: [] })
+  const empty = await service.anchors(agent, { calls: [] })
   if (empty.anchors.length !== 0) throw new Error('an empty request answered with entries')
 })
 
@@ -164,7 +171,9 @@ await check('recorder captures a well-formed nested mutation', async () => {
     throw new Error(`unexpected mutation ${JSON.stringify(mutation)}`)
   }
   // A nested dispatch is a mutation like any other: it gets coordinates too.
-  const anchored = await service.anchors(agent, { callIds: ['c8'] })
+  const anchored = await service.anchors(agent, {
+    calls: [{ callId: 'c8', path: 'b.ts', hunks: [{ oldText: 'old', newText: 'new' }] }],
+  })
   if (anchored.anchors.length !== 1 || anchored.anchors[0].callId !== 'c8') {
     throw new Error(`nested mutation lost its anchors: ${JSON.stringify(anchored)}`)
   }
@@ -176,5 +185,62 @@ await check('recorded() scopes results to the queried rootCallIds', async () => 
   if (result.mutations.length !== 0) throw new Error(`expected 0, got ${result.mutations.length}`)
 })
 
+await check('anchors() places a hunk it never recorded, from the file on disk', async () => {
+  // The retroactive path: a session reviewed after the plugin was installed has
+  // hunks the recorder never saw. Their coordinates are recovered by finding the
+  // fragment in the file as it stands — the only honest answer, and the one that
+  // makes an OLD turn readable instead of showing "line 1".
+  const { writeFile, mkdtemp, rm } = await import('node:fs/promises')
+  const { join } = await import('node:path')
+  const dir = await mkdtemp(join(process.cwd(), '.tmp-frt-locate-'))
+  const path = join(dir, 'notes.md')
+  const lines = Array.from({ length: 40 }, (_v, i) => `line ${i + 1}`)
+  lines[24] = 'line 25 changed'
+  await writeFile(path, lines.join('\n'), 'utf8')
+  try {
+    // The reviewed hunk is lines 22..28, as the engine would have trimmed it.
+    const oldText = Array.from({ length: 7 }, (_v, i) => `line ${22 + i}`).join('\n')
+    const newSide = Array.from({ length: 7 }, (_v, i) => (i === 3 ? 'line 25 changed' : `line ${22 + i}`))
+    const service = ctx.get('fileReview')
+    const result = await service.anchors(agent, {
+      calls: [{
+        callId: 'never-recorded',
+        path,
+        hunks: [{ oldText, newText: newSide.join('\n') }],
+      }],
+    })
+    if (result.anchors.length !== 1) {
+      throw new Error(`expected an entry for the located call, got ${JSON.stringify(result)}`)
+    }
+    const [entry] = result.anchors
+    if (entry.callId !== 'never-recorded') throw new Error(`unexpected call ${entry.callId}`)
+    if (entry.anchors[0].newStart !== 22) {
+      throw new Error(`placed at ${entry.anchors[0].newStart}, expected 22`)
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+await check('anchors() refuses a fragment the file no longer contains', async () => {
+  const { writeFile, mkdtemp, rm } = await import('node:fs/promises')
+  const { join } = await import('node:path')
+  const dir = await mkdtemp(join(process.cwd(), '.tmp-frt-locate-'))
+  const path = join(dir, 'gone.md')
+  await writeFile(path, 'something else entirely\n', 'utf8')
+  try {
+    const service = ctx.get('fileReview')
+    const result = await service.anchors(agent, {
+      calls: [{ callId: 'c-missing', path, hunks: [{ oldText: 'a', newText: 'changed text' }] }],
+    })
+    if (result.anchors.length !== 0) {
+      throw new Error(`expected no entry for an unplaceable call, got ${JSON.stringify(result)}`)
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 console.log(failures === 0 ? '\nALL HOST CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
 process.exitCode = failures === 0 ? 0 : 1
+

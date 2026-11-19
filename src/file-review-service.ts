@@ -7,6 +7,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { hunksForApply, mutationGroups, orderBySequence } from './mutation-order.ts'
+import { locateAnchors } from './anchor-locate.ts'
 import type {
   AnchorRequest, AnchorResult, FileReviewAction, FileReviewChange, FileReviewFileResult,
   FileReviewRequest, FileReviewResult, ProducedFileDiff, RecordedAnchor, RecordedMutation,
@@ -346,18 +347,36 @@ export class FileReviewService extends TypertRemoteService {
   /**
    * Coordinates for the requested mutation calls.
    *
-   * A call the recorder never saw is simply absent from the response: the client
-   * keeps numbering that hunk's fragment from 1, exactly as it would without this
-   * channel, so a missing entry can only ever cost the improvement, never the
-   * diff itself.
+   * Two sources, in order. A call the recorder saw answers with the coordinates
+   * captured at settlement — exact, and immune to later edits. A call it did not
+   * (the plugin was installed or restarted after the change) is placed in the
+   * file as it stands now, which is where the reviewer wants to look anyway, and
+   * only when every one of its fragments matches exactly one place in the file.
+   * A call that resolves neither way is simply absent: the client keeps that
+   * hunk's fragment-relative count, so a missing entry can only cost the
+   * improvement, never the diff itself.
    */
   async anchors(agent: Agent, request: AnchorRequest): Promise<AnchorResult> {
+    if (request.calls.length === 0) return { anchors: [] }
     const log = this.anchorLog.get(agentKey(agent))
-    if (log === undefined || request.callIds.length === 0) return { anchors: [] }
     const anchors: RecordedAnchor[] = []
-    for (const callId of request.callIds) {
-      const entry = log.get(callId)
-      if (entry !== undefined) anchors.push(entry)
+    let cwd: string | null = null
+    for (const call of request.calls) {
+      const recorded = log?.get(call.callId)
+      if (recorded !== undefined) {
+        anchors.push(recorded)
+        continue
+      }
+      if (call.path === '' || call.hunks.length === 0) continue
+      try {
+        cwd ??= sessionCwd(agent)
+        const resolved = await resolveFile(cwd, call.path)
+        const located = locateAnchors(resolved.lfText, call.hunks)
+        if (located !== null) anchors.push({ callId: call.callId, path: call.path, anchors: located })
+      } catch {
+        // The file may be gone, outside the workspace, or not text: no
+        // coordinates for this call, and the diff is unaffected.
+      }
     }
     return { anchors }
   }

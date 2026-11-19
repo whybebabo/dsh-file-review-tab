@@ -31,7 +31,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { TabDescriptor } from 'dsh-better-sidebar/client/service'
 import type {
-  AnchorRequest, AnchorResult, FileReviewRequest, FileReviewResult, RecordedAnchor,
+  AnchorCall, AnchorRequest, AnchorResult, FileReviewRequest, FileReviewResult, RecordedAnchor,
 } from '../change-types.ts'
 import { TYPERT_REMOTE } from '../remote.ts'
 import { FileReviewTab } from './FileReviewTab.tsx'
@@ -231,7 +231,8 @@ export function apply(ctx: Context): void {
          * conversation snapshot only carries context fragments, so without these
          * the preview would number every hunk from 1.
          */
-        const loadHunkAnchors = async (callIds: readonly string[]): Promise<readonly RecordedAnchor[]> => {
+        const loadHunkAnchors = async (calls: readonly AnchorCall[]): Promise<readonly RecordedAnchor[]> => {
+          if (calls.length === 0) return []
           const scope = sessions.scope(sessionId as SessionId)
           const fileReview = scope?.get('remote.fileReview') as FileReviewRemote | undefined
           // Thrown rather than returned empty: an unmounted Remote is not an
@@ -239,7 +240,7 @@ export function apply(ctx: Context): void {
           if (scope === undefined || fileReview === undefined) {
             throw new Error('File review Remote is unavailable')
           }
-          const result = await fileReview.anchors({ callIds })
+          const result = await fileReview.anchors({ calls })
           if (!result.ok) throw new Error(result.error.message)
           return result.value.anchors
         }

@@ -44,7 +44,7 @@ import {
   type SessionFileChange, type TurnFileChanges,
 } from './session-changes.ts'
 import { diffNote, missingMessage, summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
-import { useHunkAnchors } from './hunk-anchors.ts'
+import { useHunkAnchors, anchorCalls as anchorCallsOf } from './hunk-anchors.ts'
 import { recordedFetchDelay } from './recorded-fetch.ts'
 import { NativeDiff, type NativeDiffLabels } from './NativeDiff.tsx'
 import { t } from './locales.ts'
@@ -354,6 +354,13 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
       file.diffs.flatMap(diff => (diff.callId === undefined ? [] : [diff.callId])))),
     [turns],
   )
+  // The Host also needs each call's fragment text to place a hunk whose
+  // coordinates it never recorded (the plugin was installed after that edit).
+  const anchorCalls = useMemo(
+    () => new Map(turns.flatMap(turn => turn.files.flatMap(file =>
+      anchorCallsOf(file.diffs).map(call => [call.callId, call] as const)))),
+    [turns],
+  )
   const loadHunkAnchors = useCallback(
     async (callIds: readonly string[]): Promise<readonly RecordedAnchor[]> => {
       const scope = sessions.scope(sessionId as SessionId)
@@ -364,11 +371,16 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
       if (scope === undefined || remote === undefined) {
         throw new Error('File review Remote is unavailable')
       }
-      const result = await remote.anchors({ callIds })
+      const calls = callIds.flatMap(id => {
+        const call = anchorCalls.get(id)
+        return call === undefined ? [] : [call]
+      })
+      if (calls.length === 0) return []
+      const result = await remote.anchors({ calls })
       if (!result.ok) throw new Error(result.error.message)
       return result.value.anchors
     },
-    [sessions, sessionId],
+    [sessions, sessionId, anchorCalls],
   )
   const anchors = useHunkAnchors(sessionId, anchorCallIds, loadHunkAnchors, visible)
   // Auto-archive: only the newest turns stay in the main list; older completed

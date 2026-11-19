@@ -35,10 +35,14 @@ export declare class FileReviewService extends TypertRemoteService {
     /**
      * Coordinates for the requested mutation calls.
      *
-     * A call the recorder never saw is simply absent from the response: the client
-     * keeps numbering that hunk's fragment from 1, exactly as it would without this
-     * channel, so a missing entry can only ever cost the improvement, never the
-     * diff itself.
+     * Two sources, in order. A call the recorder saw answers with the coordinates
+     * captured at settlement — exact, and immune to later edits. A call it did not
+     * (the plugin was installed or restarted after the change) is placed in the
+     * file as it stands now, which is where the reviewer wants to look anyway, and
+     * only when every one of its fragments matches exactly one place in the file.
+     * A call that resolves neither way is simply absent: the client keeps that
+     * hunk's fragment-relative count, so a missing entry can only cost the
+     * improvement, never the diff itself.
      */
     anchors(agent: Agent, request: AnchorRequest): Promise<AnchorResult>;
     /** Return the recorded mutations for the requested `run_code` roots. */

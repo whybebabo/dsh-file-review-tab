@@ -28,12 +28,12 @@ import {
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
-  FileReviewAction, FileReviewRequest, FileReviewResult, RecordedAnchor,
+  AnchorCall, FileReviewAction, FileReviewRequest, FileReviewResult, RecordedAnchor,
 } from '../change-types.ts'
 import { basename, selectProducedFiles, type ProducedFileReview } from './turn-deliverables.ts'
 import type { NS } from './chat-locales.ts'
 import { diffNote, summarizeDiffs, toNativeHunks, type DiffStats } from './diff-hunks.ts'
-import { useHunkAnchors } from './hunk-anchors.ts'
+import { anchorCalls, useHunkAnchors } from './hunk-anchors.ts'
 import { NativeDiff } from './NativeDiff.tsx'
 import { subscribeFileReviewInvalidation } from './deep-link.ts'
 import css from './ProducedCard.module.css'
@@ -80,7 +80,7 @@ export type ProducedFilesProps = TurnTailOwnerProps & {
    * hover preview number them by the file's real lines. Absent (an older Host, or
    * a session with no remote) the preview falls back to hunk-local numbering.
    */
-  loadHunkAnchors?: ((callIds: readonly string[]) => Promise<readonly RecordedAnchor[]>) | undefined
+  loadHunkAnchors?: ((calls: readonly AnchorCall[]) => Promise<readonly RecordedAnchor[]>) | undefined
   /**
    * Open the plugin's sidebar tab with the given paths pre-expanded
    * (the 审查 button passes every produced path; a file row passes its own).
@@ -232,21 +232,32 @@ function ChangedFilePreview({
   readonly display: string
   readonly reviews: readonly ProducedFileReview[]
   readonly reviewSessionId?: string | undefined
-  readonly loadHunkAnchors?: ((callIds: readonly string[]) => Promise<readonly RecordedAnchor[]>) | undefined
+  readonly loadHunkAnchors?: ((calls: readonly AnchorCall[]) => Promise<readonly RecordedAnchor[]>) | undefined
   readonly t: ProducedFilesProps['t']
 }) {
   const diffs = reviews.flatMap(review => review.diffs)
   // The preview mounts on hover, so this is the first and only lookup for these
   // calls: the numbers go from the fragment's own count to the file's real lines
   // as soon as the Host answers (its answer is cached per session).
-  const callIds = useMemo(
-    () => diffs.flatMap(diff => (diff.callId === undefined ? [] : [diff.callId])),
-    [diffs],
+  const calls = useMemo(() => anchorCalls(diffs), [diffs])
+  const callIds = useMemo(() => calls.map(call => call.callId), [calls])
+  // The lookup only needs to know WHICH calls to ask about, and a mounted lookup
+  // is re-seeded from the cache, so the requested fragments ride a ref: they are
+  // the same text the hunks were built from and must not re-trigger a request.
+  const callsRef = useRef(calls)
+  callsRef.current = calls
+  const load = useMemo(
+    () => loadHunkAnchors === undefined
+      ? undefined
+      : (ids: readonly string[]) => loadHunkAnchors(
+        callsRef.current.filter(call => ids.includes(call.callId)),
+      ),
+    [loadHunkAnchors],
   )
   const anchors = useHunkAnchors(
     reviewSessionId ?? '',
     callIds,
-    loadHunkAnchors,
+    load,
     reviewSessionId !== undefined && loadHunkAnchors !== undefined,
   )
   const hunks = toNativeHunks(diffs, 2, anchors)
